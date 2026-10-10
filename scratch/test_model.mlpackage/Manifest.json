@@ -1,0 +1,12 @@
+{
+  "fileFormatVersion": "1.0.0",
+  "itemInfoEntries": {
+    "D0E81CE2-C8C1-4FD8-91BE-58E2E5B5D5C4": {
+      "author": "com.apple.CoreML",
+      "description": "CoreML Model Specification",
+      "name": "model.mil",
+      "path": "Data/com.apple.CoreML/model.mil"
+    }
+  },
+  "rootModelIdentifier": "D0E81CE2-C8C1-4FD8-91BE-58E2E5B5D5C4"
+}

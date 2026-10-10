@@ -1,0 +1,667 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000012A00000000000001 /* KeepSakeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000001 /* KeepSakeApp.swift */; };
+		A10000012A00000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000002 /* ContentView.swift */; };
+		A10000012A00000000000003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000003 /* Assets.xcassets */; };
+		A10000012A00000000000010 /* PhotoItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000010 /* PhotoItem.swift */; };
+		A10000012A00000000000011 /* PhotoScannerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000011 /* PhotoScannerService.swift */; };
+		A10000012A00000000000012 /* ThumbnailLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000012 /* ThumbnailLoader.swift */; };
+		A10000012A00000000000013 /* PhotoBrowserViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000013 /* PhotoBrowserViewModel.swift */; };
+		A10000012A00000000000014 /* PhotoGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000014 /* PhotoGridView.swift */; };
+		A10000012A00000000000015 /* PhotoThumbnailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000015 /* PhotoThumbnailView.swift */; };
+		A10000012A00000000000016 /* PhotoDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000016 /* PhotoDetailView.swift */; };
+		A10000012A00000000000017 /* DetectedFace.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000017 /* DetectedFace.swift */; };
+		A10000012A00000000000018 /* FaceDetectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000018 /* FaceDetectionService.swift */; };
+		A10000012A00000000000019 /* CoordinateConverter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000019 /* CoordinateConverter.swift */; };
+		A10000012A00000000000020 /* KeepSakeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000020 /* KeepSakeTests.swift */; };
+		A10000012A00000000000021 /* FaceEmbedding.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000021 /* FaceEmbedding.swift */; };
+		A10000012A00000000000022 /* FacePreprocessingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000022 /* FacePreprocessingService.swift */; };
+		A10000012A00000000000023 /* FaceRecognitionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000023 /* FaceRecognitionService.swift */; };
+		A10000012A00000000000024 /* EmbeddingSimilarityUtility.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000024 /* EmbeddingSimilarityUtility.swift */; };
+		A10000012A00000000000025 /* FaceRecognitionExperimentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000025 /* FaceRecognitionExperimentView.swift */; };
+		A10000012A00000000000026 /* ArcFaceRecognitionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000026 /* ArcFaceRecognitionService.swift */; };
+		A10000012A00000000000027 /* FaceGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000027 /* FaceGroup.swift */; };
+		A10000012A00000000000028 /* FaceClusteringService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000028 /* FaceClusteringService.swift */; };
+		A10000012A00000000000029 /* FaceClusteringViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000029 /* FaceClusteringViewModel.swift */; };
+		A10000012A00000000000030 /* FaceClusteringExperimentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000030 /* FaceClusteringExperimentView.swift */; };
+		A10000012A00000000000031 /* PersistedModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000031 /* PersistedModels.swift */; };
+		A10000012A00000000000032 /* BookmarkManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000032 /* BookmarkManager.swift */; };
+		A10000012A00000000000033 /* LibraryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000033 /* LibraryStore.swift */; };
+		A10000012A00000000000034 /* LibraryProcessingCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000034 /* LibraryProcessingCoordinator.swift */; };
+		A10000012A00000000000035 /* IdentityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000035 /* IdentityService.swift */; };
+		A10000012A00000000000036 /* FaceCropLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000036 /* FaceCropLoader.swift */; };
+		A10000012A00000000000037 /* PeopleViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000037 /* PeopleViewModel.swift */; };
+		A10000012A00000000000038 /* FaceCropThumbnailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000038 /* FaceCropThumbnailView.swift */; };
+		A10000012A00000000000039 /* PersonCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000039 /* PersonCardView.swift */; };
+		A10000012A0000000000003A /* MergePeopleSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A0000000000003A /* MergePeopleSheet.swift */; };
+		A10000012A0000000000003B /* AssignFaceSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A0000000000003B /* AssignFaceSheet.swift */; };
+		A10000012A0000000000003C /* UnassignedFacesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A0000000000003C /* UnassignedFacesView.swift */; };
+		A10000012A0000000000003D /* PersonDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A0000000000003D /* PersonDetailView.swift */; };
+		A10000012A0000000000003E /* PeopleGalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A0000000000003E /* PeopleGalleryView.swift */; };
+		A10000012A0000000000003F /* LibraryProcessingQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A0000000000003F /* LibraryProcessingQueue.swift */; };
+		A10000012A00000000000040 /* FolderMonitorService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000040 /* FolderMonitorService.swift */; };
+		A10000012A00000000000041 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000041 /* AppSettings.swift */; };
+		A10000012A00000000000042 /* UserFacingError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000042 /* UserFacingError.swift */; };
+		A10000012A00000000000043 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000043 /* SettingsView.swift */; };
+		A10000012A00000000000044 /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000044 /* WelcomeView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A100000C2A00000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A100000A2A00000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000062A00000000000001;
+			remoteInfo = KeepSake;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		A10000002A00000000000001 /* KeepSake.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KeepSake.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000002A00000000000002 /* KeepSakeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KeepSakeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000022A00000000000001 /* KeepSakeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeepSakeApp.swift; sourceTree = "<group>"; };
+		A10000022A00000000000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A10000022A00000000000003 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A10000022A00000000000004 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A10000022A00000000000010 /* PhotoItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoItem.swift; sourceTree = "<group>"; };
+		A10000022A00000000000011 /* PhotoScannerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoScannerService.swift; sourceTree = "<group>"; };
+		A10000022A00000000000012 /* ThumbnailLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailLoader.swift; sourceTree = "<group>"; };
+		A10000022A00000000000013 /* PhotoBrowserViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoBrowserViewModel.swift; sourceTree = "<group>"; };
+		A10000022A00000000000014 /* PhotoGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoGridView.swift; sourceTree = "<group>"; };
+		A10000022A00000000000015 /* PhotoThumbnailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoThumbnailView.swift; sourceTree = "<group>"; };
+		A10000022A00000000000016 /* PhotoDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoDetailView.swift; sourceTree = "<group>"; };
+		A10000022A00000000000017 /* DetectedFace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetectedFace.swift; sourceTree = "<group>"; };
+		A10000022A00000000000018 /* FaceDetectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceDetectionService.swift; sourceTree = "<group>"; };
+		A10000022A00000000000019 /* CoordinateConverter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoordinateConverter.swift; sourceTree = "<group>"; };
+		A10000022A00000000000020 /* KeepSakeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeepSakeTests.swift; sourceTree = "<group>"; };
+		A10000022A00000000000021 /* FaceEmbedding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceEmbedding.swift; sourceTree = "<group>"; };
+		A10000022A00000000000022 /* FacePreprocessingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FacePreprocessingService.swift; sourceTree = "<group>"; };
+		A10000022A00000000000023 /* FaceRecognitionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceRecognitionService.swift; sourceTree = "<group>"; };
+		A10000022A00000000000024 /* EmbeddingSimilarityUtility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddingSimilarityUtility.swift; sourceTree = "<group>"; };
+		A10000022A00000000000025 /* FaceRecognitionExperimentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceRecognitionExperimentView.swift; sourceTree = "<group>"; };
+		A10000022A00000000000026 /* ArcFaceRecognitionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArcFaceRecognitionService.swift; sourceTree = "<group>"; };
+		A10000022A00000000000027 /* FaceGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceGroup.swift; sourceTree = "<group>"; };
+		A10000022A00000000000028 /* FaceClusteringService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceClusteringService.swift; sourceTree = "<group>"; };
+		A10000022A00000000000029 /* FaceClusteringViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceClusteringViewModel.swift; sourceTree = "<group>"; };
+		A10000022A00000000000030 /* FaceClusteringExperimentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceClusteringExperimentView.swift; sourceTree = "<group>"; };
+		A10000022A00000000000031 /* PersistedModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistedModels.swift; sourceTree = "<group>"; };
+		A10000022A00000000000032 /* BookmarkManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkManager.swift; sourceTree = "<group>"; };
+		A10000022A00000000000033 /* LibraryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryStore.swift; sourceTree = "<group>"; };
+		A10000022A00000000000034 /* LibraryProcessingCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryProcessingCoordinator.swift; sourceTree = "<group>"; };
+		A10000022A00000000000035 /* IdentityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityService.swift; sourceTree = "<group>"; };
+		A10000022A00000000000036 /* FaceCropLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceCropLoader.swift; sourceTree = "<group>"; };
+		A10000022A00000000000037 /* PeopleViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeopleViewModel.swift; sourceTree = "<group>"; };
+		A10000022A00000000000038 /* FaceCropThumbnailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceCropThumbnailView.swift; sourceTree = "<group>"; };
+		A10000022A00000000000039 /* PersonCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonCardView.swift; sourceTree = "<group>"; };
+		A10000022A0000000000003A /* MergePeopleSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MergePeopleSheet.swift; sourceTree = "<group>"; };
+		A10000022A0000000000003B /* AssignFaceSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssignFaceSheet.swift; sourceTree = "<group>"; };
+		A10000022A0000000000003C /* UnassignedFacesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnassignedFacesView.swift; sourceTree = "<group>"; };
+		A10000022A0000000000003D /* PersonDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonDetailView.swift; sourceTree = "<group>"; };
+		A10000022A0000000000003E /* PeopleGalleryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeopleGalleryView.swift; sourceTree = "<group>"; };
+		A10000022A0000000000003F /* LibraryProcessingQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryProcessingQueue.swift; sourceTree = "<group>"; };
+		A10000022A00000000000040 /* FolderMonitorService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderMonitorService.swift; sourceTree = "<group>"; };
+		A10000022A00000000000041 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
+		A10000022A00000000000042 /* UserFacingError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserFacingError.swift; sourceTree = "<group>"; };
+		A10000022A00000000000043 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A10000022A00000000000044 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A10000042A00000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000042A00000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A10000052A00000000000001 = {
+			isa = PBXGroup;
+			children = (
+				A10000052A00000000000002 /* KeepSake */,
+				A10000052A00000000000020 /* KeepSakeTests */,
+				A10000052A00000000000005 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A10000052A00000000000002 /* KeepSake */ = {
+			isa = PBXGroup;
+			children = (
+				A10000052A00000000000003 /* App */,
+				A10000052A00000000000007 /* Models */,
+				A10000052A00000000000008 /* Services */,
+				A10000052A00000000000009 /* ViewModels */,
+				A10000052A00000000000004 /* Views */,
+				A10000052A00000000000021 /* Utilities */,
+				A10000052A00000000000006 /* Resources */,
+				A10000022A00000000000004 /* Info.plist */,
+			);
+			path = KeepSake;
+			sourceTree = "<group>";
+		};
+		A10000052A00000000000003 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				A10000022A00000000000001 /* KeepSakeApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		A10000052A00000000000007 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				A10000022A00000000000010 /* PhotoItem.swift */,
+				A10000022A00000000000017 /* DetectedFace.swift */,
+				A10000022A00000000000021 /* FaceEmbedding.swift */,
+				A10000022A00000000000027 /* FaceGroup.swift */,
+				A10000022A00000000000031 /* PersistedModels.swift */,
+				A10000022A00000000000041 /* AppSettings.swift */,
+				A10000022A00000000000042 /* UserFacingError.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		A10000052A00000000000008 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				A10000022A00000000000011 /* PhotoScannerService.swift */,
+				A10000022A00000000000012 /* ThumbnailLoader.swift */,
+				A10000022A00000000000018 /* FaceDetectionService.swift */,
+				A10000022A00000000000022 /* FacePreprocessingService.swift */,
+				A10000022A00000000000023 /* FaceRecognitionService.swift */,
+				A10000022A00000000000026 /* ArcFaceRecognitionService.swift */,
+				A10000022A00000000000028 /* FaceClusteringService.swift */,
+				A10000022A00000000000032 /* BookmarkManager.swift */,
+				A10000022A00000000000033 /* LibraryStore.swift */,
+				A10000022A00000000000034 /* LibraryProcessingCoordinator.swift */,
+				A10000022A00000000000035 /* IdentityService.swift */,
+				A10000022A00000000000036 /* FaceCropLoader.swift */,
+				A10000022A0000000000003F /* LibraryProcessingQueue.swift */,
+				A10000022A00000000000040 /* FolderMonitorService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		A10000052A00000000000009 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				A10000022A00000000000013 /* PhotoBrowserViewModel.swift */,
+				A10000022A00000000000029 /* FaceClusteringViewModel.swift */,
+				A10000022A00000000000037 /* PeopleViewModel.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		A10000052A00000000000004 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				A10000022A00000000000002 /* ContentView.swift */,
+				A10000022A00000000000014 /* PhotoGridView.swift */,
+				A10000022A00000000000015 /* PhotoThumbnailView.swift */,
+				A10000022A00000000000016 /* PhotoDetailView.swift */,
+				A10000022A00000000000025 /* FaceRecognitionExperimentView.swift */,
+				A10000022A00000000000030 /* FaceClusteringExperimentView.swift */,
+				A10000022A00000000000043 /* SettingsView.swift */,
+				A10000022A00000000000044 /* WelcomeView.swift */,
+				A10000052A00000000000022 /* People */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		A10000052A00000000000022 /* People */ = {
+			isa = PBXGroup;
+			children = (
+				A10000022A00000000000038 /* FaceCropThumbnailView.swift */,
+				A10000022A00000000000039 /* PersonCardView.swift */,
+				A10000022A0000000000003A /* MergePeopleSheet.swift */,
+				A10000022A0000000000003B /* AssignFaceSheet.swift */,
+				A10000022A0000000000003C /* UnassignedFacesView.swift */,
+				A10000022A0000000000003D /* PersonDetailView.swift */,
+				A10000022A0000000000003E /* PeopleGalleryView.swift */,
+			);
+			path = People;
+			sourceTree = "<group>";
+		};
+		A10000052A00000000000021 /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				A10000022A00000000000019 /* CoordinateConverter.swift */,
+				A10000022A00000000000024 /* EmbeddingSimilarityUtility.swift */,
+			);
+			path = Utilities;
+			sourceTree = "<group>";
+		};
+		A10000052A00000000000006 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				A10000022A00000000000003 /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		A10000052A00000000000020 /* KeepSakeTests */ = {
+			isa = PBXGroup;
+			children = (
+				A10000022A00000000000020 /* KeepSakeTests.swift */,
+			);
+			path = KeepSakeTests;
+			sourceTree = "<group>";
+		};
+		A10000052A00000000000005 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A10000002A00000000000001 /* KeepSake.app */,
+				A10000002A00000000000002 /* KeepSakeTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A10000062A00000000000001 /* KeepSake */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000072A00000000000001 /* Build configuration list for PBXNativeTarget "KeepSake" */;
+			buildPhases = (
+				A10000082A00000000000001 /* Sources */,
+				A10000042A00000000000001 /* Frameworks */,
+				A10000092A00000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = KeepSake;
+			productName = KeepSake;
+			productReference = A10000002A00000000000001 /* KeepSake.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A10000062A00000000000002 /* KeepSakeTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000072A00000000000003 /* Build configuration list for PBXNativeTarget "KeepSakeTests" */;
+			buildPhases = (
+				A10000082A00000000000002 /* Sources */,
+				A10000042A00000000000002 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A100000D2A00000000000001 /* PBXTargetDependency */,
+			);
+			name = KeepSakeTests;
+			productName = KeepSakeTests;
+			productReference = A10000002A00000000000002 /* KeepSakeTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A100000A2A00000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					A10000062A00000000000001 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+					A10000062A00000000000002 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = A10000062A00000000000001;
+					};
+				};
+			};
+			buildConfigurationList = A10000072A00000000000002 /* Build configuration list for PBXProject "KeepSake" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A10000052A00000000000001;
+			productRefGroup = A10000052A00000000000005 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A10000062A00000000000001 /* KeepSake */,
+				A10000062A00000000000002 /* KeepSakeTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A10000092A00000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000012A00000000000003 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A10000082A00000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000012A00000000000001 /* KeepSakeApp.swift in Sources */,
+				A10000012A00000000000002 /* ContentView.swift in Sources */,
+				A10000012A00000000000010 /* PhotoItem.swift in Sources */,
+				A10000012A00000000000011 /* PhotoScannerService.swift in Sources */,
+				A10000012A00000000000012 /* ThumbnailLoader.swift in Sources */,
+				A10000012A00000000000013 /* PhotoBrowserViewModel.swift in Sources */,
+				A10000012A00000000000014 /* PhotoGridView.swift in Sources */,
+				A10000012A00000000000015 /* PhotoThumbnailView.swift in Sources */,
+				A10000012A00000000000016 /* PhotoDetailView.swift in Sources */,
+				A10000012A00000000000017 /* DetectedFace.swift in Sources */,
+				A10000012A00000000000018 /* FaceDetectionService.swift in Sources */,
+				A10000012A00000000000019 /* CoordinateConverter.swift in Sources */,
+				A10000012A00000000000021 /* FaceEmbedding.swift in Sources */,
+				A10000012A00000000000022 /* FacePreprocessingService.swift in Sources */,
+				A10000012A00000000000023 /* FaceRecognitionService.swift in Sources */,
+				A10000012A00000000000024 /* EmbeddingSimilarityUtility.swift in Sources */,
+				A10000012A00000000000025 /* FaceRecognitionExperimentView.swift in Sources */,
+				A10000012A00000000000026 /* ArcFaceRecognitionService.swift in Sources */,
+				A10000012A00000000000027 /* FaceGroup.swift in Sources */,
+				A10000012A00000000000028 /* FaceClusteringService.swift in Sources */,
+				A10000012A00000000000029 /* FaceClusteringViewModel.swift in Sources */,
+				A10000012A00000000000030 /* FaceClusteringExperimentView.swift in Sources */,
+				A10000012A00000000000031 /* PersistedModels.swift in Sources */,
+				A10000012A00000000000032 /* BookmarkManager.swift in Sources */,
+				A10000012A00000000000033 /* LibraryStore.swift in Sources */,
+				A10000012A00000000000034 /* LibraryProcessingCoordinator.swift in Sources */,
+				A10000012A00000000000035 /* IdentityService.swift in Sources */,
+				A10000012A00000000000036 /* FaceCropLoader.swift in Sources */,
+				A10000012A00000000000037 /* PeopleViewModel.swift in Sources */,
+				A10000012A00000000000038 /* FaceCropThumbnailView.swift in Sources */,
+				A10000012A00000000000039 /* PersonCardView.swift in Sources */,
+				A10000012A0000000000003A /* MergePeopleSheet.swift in Sources */,
+				A10000012A0000000000003B /* AssignFaceSheet.swift in Sources */,
+				A10000012A0000000000003C /* UnassignedFacesView.swift in Sources */,
+				A10000012A0000000000003D /* PersonDetailView.swift in Sources */,
+				A10000012A0000000000003E /* PeopleGalleryView.swift in Sources */,
+				A10000012A0000000000003F /* LibraryProcessingQueue.swift in Sources */,
+				A10000012A00000000000040 /* FolderMonitorService.swift in Sources */,
+				A10000012A00000000000041 /* AppSettings.swift in Sources */,
+				A10000012A00000000000042 /* UserFacingError.swift in Sources */,
+				A10000012A00000000000043 /* SettingsView.swift in Sources */,
+				A10000012A00000000000044 /* WelcomeView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000082A00000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000012A00000000000020 /* KeepSakeTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A100000D2A00000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10000062A00000000000001 /* KeepSake */;
+			targetProxy = A100000C2A00000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		A100000B2A00000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDEFINED_VARIABLES = YES;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		A100000B2A00000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDEFINED_VARIABLES = YES;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		A100000B2A00000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = KeepSake/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_SWIFT_FLAGS = "-Xfrontend -disable-sandbox";
+				PRODUCT_BUNDLE_IDENTIFIER = com.keepsake.KeepSake;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A100000B2A00000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = KeepSake/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_SWIFT_FLAGS = "-Xfrontend -disable-sandbox";
+				PRODUCT_BUNDLE_IDENTIFIER = com.keepsake.KeepSake;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		A100000B2A00000000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@loader_path/../../../../MacOS",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_SWIFT_FLAGS = "-Xfrontend -disable-sandbox";
+				PRODUCT_BUNDLE_IDENTIFIER = com.keepsake.KeepSakeTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/KeepSake.app/Contents/MacOS/KeepSake";
+			};
+			name = Debug;
+		};
+		A100000B2A00000000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@loader_path/../../../../MacOS",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_SWIFT_FLAGS = "-Xfrontend -disable-sandbox";
+				PRODUCT_BUNDLE_IDENTIFIER = com.keepsake.KeepSakeTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/KeepSake.app/Contents/MacOS/KeepSake";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A10000072A00000000000001 /* Build configuration list for PBXNativeTarget "KeepSake" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A100000B2A00000000000003 /* Debug */,
+				A100000B2A00000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000072A00000000000002 /* Build configuration list for PBXProject "KeepSake" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A100000B2A00000000000001 /* Debug */,
+				A100000B2A00000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000072A00000000000003 /* Build configuration list for PBXNativeTarget "KeepSakeTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A100000B2A00000000000005 /* Debug */,
+				A100000B2A00000000000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A100000A2A00000000000001 /* Project object */;
+}

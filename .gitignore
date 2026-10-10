@@ -1,0 +1,24 @@
+# macOS
+.DS_Store
+
+# Xcode and Swift
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Personal photo library and local data
+library_index.json
+*.photoslibrary
+
+# Local model conversion and generated artifacts
+*.mlmodelc/
