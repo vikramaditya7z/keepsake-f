@@ -5,8 +5,9 @@
 - **Platform**: macOS 14+, Swift 5.9+, SwiftUI, Apple Vision, Core ML, Accelerate (`vDSP`).
 - **Active Workspace**: `/Users/vikramaditya/Disk/Projects/KeepSake` (symlinked to `/Users/vikramaditya/Disk/Projects/F-KeepSake`).
 - **Build Status**: Compiles cleanly with zero compiler warnings or errors (`xcodebuild` targeting macOS 14.0).
-- **Test Suite Status**: **150 tests passing (0 failures)** in ~2.0 seconds via `KeepSakeTests.xctest`.
-- **Active Architecture Phase**: Phase 9 (macOS Native UX & App Settings) + Step 2 of the Hierarchical Face Identity System (`FaceCluster` model and `LocalFaceClusterService`).
+- **Test Suite Status**: **151 tests passing (0 failures)** in ~5.2 seconds via `KeepSakeTests.xctest`.
+- **Active Architecture Milestone**: **Milestone V2: Recognition Evaluation (COMPLETE)**. Next: Milestone V3 (Genuine On-Device Recognition).
+
 
 ---
 
