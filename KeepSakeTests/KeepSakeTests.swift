@@ -4991,7 +4991,196 @@ final class KeepSakeTests: XCTestCase {
         let multiFaceClusters = clusters.filter { $0.faceIds.count > 1 }
         XCTAssertGreaterThanOrEqual(multiFaceClusters.count, 4, "High-confidence same-person appearances must form multi-face clusters")
     }
+
+    // MARK: - Autonomous Model Evaluation Benchmark
+
+    func testModelEvaluation_BenchmarkCandidatesAgainstGroundTruthManifest() async throws {
+        let manifestURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("test-dataset/manifest.json")
+        guard FileManager.default.fileExists(atPath: manifestURL.path) else {
+            print("[BENCHMARK SKIP] manifest.json not found at \(manifestURL.path)")
+            return
+        }
+
+        let datasetDir = manifestURL.deletingLastPathComponent()
+        let manifestData = try Data(contentsOf: manifestURL)
+        guard let manifestJSON = try JSONSerialization.jsonObject(with: manifestData) as? [String: Any],
+              let photosArray = manifestJSON["photos"] as? [[String: Any]] else {
+            XCTFail("Could not parse manifest.json")
+            return
+        }
+
+        struct EvalFace {
+            let faceId: UUID
+            let photoFilename: String
+            let photoIndex: Int
+            let photoURL: URL
+            let box: CGRect
+            let label: String?
+            let isVerified: Bool
+        }
+
+        var evalFaces: [EvalFace] = []
+        for pDict in photosArray {
+            guard let fn = pDict["filename"] as? String,
+                  let pIdx = pDict["index"] as? Int,
+                  let faces = pDict["faces"] as? [[String: Any]] else { continue }
+            let photoURL = datasetDir.appendingPathComponent(fn)
+            for fDict in faces {
+                guard let fIdStr = fDict["faceId"] as? String,
+                      let fId = UUID(uuidString: fIdStr),
+                      let bbox = fDict["boundingBox"] as? [[Double]] else { continue }
+                let box = CGRect(x: bbox[0][0], y: bbox[0][1], width: bbox[1][0], height: bbox[1][1])
+                let label = fDict["identityLabel"] as? String
+                let status = fDict["verificationStatus"] as? String
+                let isVerified = (status == "verified" && label != nil && label != "Unlabeled")
+                evalFaces.append(EvalFace(
+                    faceId: fId,
+                    photoFilename: fn,
+                    photoIndex: pIdx,
+                    photoURL: photoURL,
+                    box: box,
+                    label: isVerified ? label : nil,
+                    isVerified: isVerified
+                ))
+            }
+        }
+
+        print("[BENCHMARK] Total faces in manifest: \(evalFaces.count)")
+        let labeledFaces = evalFaces.filter { $0.isVerified }
+        print("[BENCHMARK] Verified labeled faces: \(labeledFaces.count)")
+
+        let preprocessor = FacePreprocessingService()
+        let visionService = VisionFaceRecognitionService()
+        let arcFaceService = ArcFaceRecognitionService()
+
+        var visionEmbeddings: [FaceEmbedding] = []
+        var arcFaceEmbeddings: [FaceEmbedding] = []
+        var visionLatencies: [Double] = []
+        var arcFaceLatencies: [Double] = []
+
+        for face in evalFaces {
+            guard FileManager.default.fileExists(atPath: face.photoURL.path) else {
+                XCTFail("Image missing: \(face.photoURL.path)")
+                return
+            }
+            let crop = try preprocessor.cropFace(from: face.photoURL, normalizedBox: face.box)
+
+            let t0 = ContinuousClock.now
+            let vEmb = try await visionService.generateEmbedding(from: crop, photoURL: face.photoURL, faceId: face.faceId)
+            let vElapsed = ContinuousClock.now - t0
+            let vMs = Double(vElapsed.components.attoseconds) / 1e15 + Double(vElapsed.components.seconds) * 1000.0
+            visionEmbeddings.append(vEmb)
+            visionLatencies.append(vMs)
+
+            let t1 = ContinuousClock.now
+            let aEmb = try await arcFaceService.generateEmbedding(from: crop, photoURL: face.photoURL, faceId: face.faceId)
+            let aElapsed = ContinuousClock.now - t1
+            let aMs = Double(aElapsed.components.attoseconds) / 1e15 + Double(aElapsed.components.seconds) * 1000.0
+            arcFaceEmbeddings.append(aEmb)
+            arcFaceLatencies.append(aMs)
+        }
+
+        // Pairwise metrics helper
+        func evaluateCandidate(name: String, embeddings: [FaceEmbedding], latencies: [Double], dim: Int) -> [String: Any] {
+            var samePairs: [Double] = []
+            var diffPairs: [Double] = []
+
+            for i in 0..<evalFaces.count {
+                for j in (i + 1)..<evalFaces.count {
+                    let f1 = evalFaces[i]
+                    let f2 = evalFaces[j]
+                    let sim = Double(EmbeddingSimilarityUtility.cosineSimilarity(embeddings[i].vector, embeddings[j].vector))
+
+                    if let l1 = f1.label, let l2 = f2.label {
+                        if l1 == l2 {
+                            samePairs.append(sim)
+                        } else {
+                            diffPairs.append(sim)
+                        }
+                    }
+                }
+            }
+
+            samePairs.sort()
+            diffPairs.sort()
+
+            let sameMin = samePairs.first ?? 0
+            let sameMax = samePairs.last ?? 0
+            let sameMean = samePairs.reduce(0, +) / Double(max(1, samePairs.count))
+            let sameMedian = samePairs.isEmpty ? 0 : samePairs[samePairs.count / 2]
+
+            let diffMin = diffPairs.first ?? 0
+            let diffMax = diffPairs.last ?? 0
+            let diffMean = diffPairs.reduce(0, +) / Double(max(1, diffPairs.count))
+            let diffMedian = diffPairs.isEmpty ? 0 : diffPairs[diffPairs.count / 2]
+
+            let margin = sameMin - diffMax
+            let overlapCount = samePairs.filter { $0 <= diffMax }.count
+
+            var sweep: [[String: Any]] = []
+            let thresholds = [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75]
+            for t in thresholds {
+                let tp = samePairs.filter { $0 >= t }.count
+                let fn = samePairs.filter { $0 < t }.count
+                let fp = diffPairs.filter { $0 >= t }.count
+                let tn = diffPairs.filter { $0 < t }.count
+                let precision = Double(tp) / Double(max(1, tp + fp))
+                let recall = Double(tp) / Double(max(1, tp + fn))
+                let f1 = (precision + recall > 0) ? (2.0 * precision * recall / (precision + recall)) : 0.0
+                sweep.append(["threshold": t, "tp": tp, "fn": fn, "fp": fp, "tn": tn, "precision": precision, "recall": recall, "f1": f1])
+            }
+
+            let sortedLatencies = latencies.sorted()
+            let medianLat = sortedLatencies.isEmpty ? 0 : sortedLatencies[sortedLatencies.count / 2]
+            let meanLat = latencies.reduce(0, +) / Double(max(1, latencies.count))
+            let p95Lat = sortedLatencies.isEmpty ? 0 : sortedLatencies[Int(Double(sortedLatencies.count) * 0.95)]
+
+            return [
+                "candidateName": name,
+                "dimension": dim,
+                "samePairsCount": samePairs.count,
+                "diffPairsCount": diffPairs.count,
+                "sameStats": ["min": sameMin, "max": sameMax, "mean": sameMean, "median": sameMedian],
+                "diffStats": ["min": diffMin, "max": diffMax, "mean": diffMean, "median": diffMedian],
+                "separationMargin": margin,
+                "overlappingSamePairsCount": overlapCount,
+                "thresholdSweep": sweep,
+                "latencyMs": ["mean": meanLat, "median": medianLat, "p95": p95Lat, "first": latencies.first ?? 0]
+            ]
+        }
+
+        let visionReport = evaluateCandidate(name: "Apple Vision FeaturePrint (Rev 2)", embeddings: visionEmbeddings, latencies: visionLatencies, dim: 768)
+        let arcReport = evaluateCandidate(name: "Synthetic 2D-DCT MobileFaceNet Fallback", embeddings: arcFaceEmbeddings, latencies: arcFaceLatencies, dim: 512)
+
+        print("\n" + String(repeating: "=", count: 80))
+        print("MODEL EVALUATION BENCHMARK RESULTS")
+        print(String(repeating: "=", count: 80))
+        for rep in [visionReport, arcReport] {
+            print("\nCandidate: \(rep["candidateName"] as! String) (Dimension: \(rep["dimension"] as! Int)-D)")
+            let same = rep["sameStats"] as! [String: Double]
+            let diff = rep["diffStats"] as! [String: Double]
+            let lat = rep["latencyMs"] as! [String: Double]
+            print("  Same-Identity Pairs (\(rep["samePairsCount"] as! Int)): min=\(String(format: "%.4f", same["min"]!)), mean=\(String(format: "%.4f", same["mean"]!)), median=\(String(format: "%.4f", same["median"]!)), max=\(String(format: "%.4f", same["max"]!))")
+            print("  Diff-Identity Pairs (\(rep["diffPairsCount"] as! Int)): min=\(String(format: "%.4f", diff["min"]!)), mean=\(String(format: "%.4f", diff["mean"]!)), median=\(String(format: "%.4f", diff["median"]!)), max=\(String(format: "%.4f", diff["max"]!))")
+            print("  Separation Margin: \(String(format: "%.4f", rep["separationMargin"] as! Double))")
+            print("  Overlapping Pairs: \(rep["overlappingSamePairsCount"] as! Int)")
+            print("  Latency: first=\(String(format: "%.1f", lat["first"]!))ms, mean=\(String(format: "%.1f", lat["mean"]!))ms, median=\(String(format: "%.1f", lat["median"]!))ms, p95=\(String(format: "%.1f", lat["p95"]!))ms")
+        }
+        print(String(repeating: "=", count: 80))
+
+        let resultsDir = URL(fileURLWithPath: "/Users/vikramaditya/.gemini/antigravity/brain/997d2b6e-4811-4f02-964d-9c7cdd7691c6/scratch")
+        let outURL = resultsDir.appendingPathComponent("model_evaluation_empirical_results.json")
+        let fullData = try JSONSerialization.data(withJSONObject: [
+            "timestamp": Date().ISO8601Format(),
+            "candidates": [visionReport, arcReport]
+        ], options: [.prettyPrinted])
+        try fullData.write(to: outURL)
+    }
 }
+
 
 
 

@@ -49,32 +49,41 @@
 
 ## 5. Recent Experiments & Verified Results
 
-- **Test Suite Execution (2026-10-10)**:
-  - Command: `xcodebuild -project KeepSake.xcodeproj -scheme KeepSakeTests -derivedDataPath ./build/DerivedData build-for-testing ... && xcrun xctest ...`
-  - Result: **150 tests passed, 0 failures** in 2.085 seconds.
-- **Stage 1 `FaceCluster` Audit on Ground-Truth Dataset (19 photos, 53 faces)**:
-  - Result: 46 clusters formed (7 multi-face pairs, 39 singletons).
-  - Cannot-Link Violations: **0** (all co-occurring face pairs in group shots rejected).
-  - Cross-Person Merges: **0**.
+- **Model Evaluation Benchmark Execution (2026-10-10)**:
+  - Command: `xcodebuild -scheme KeepSakeTests ... && xcrun xctest -XCTest KeepSakeTests/testModelEvaluation_BenchmarkCandidatesAgainstGroundTruthManifest ...`
+  - Result: **151 tests passed, 0 failures** in 5.195 seconds.
+  - Candidate D (Apple Vision FeaturePrint Rev 2, 768-D):
+    - Same-identity pairs (142): min=0.4425, mean=0.6306, median=0.6304, max=0.9720
+    - Diff-identity pairs (293): min=0.3074, mean=0.5869, median=0.5899, max=0.8411
+    - Separation margin: **-0.3986** (140/142 same-identity pairs overlap with diff-identity similarities).
+    - Latency: median 7.1 ms, first 99.8 ms.
+    - Finding: Completely unsuitable for face biometrics; diff pairs reach 0.8411 due to scene/lighting similarity.
+  - Candidate F (Synthetic 2D-DCT Fallback in `ArcFaceRecognitionService`, 512-D):
+    - Same-identity pairs (142): min=-0.2321, mean=0.2149, median=0.2028, max=0.7254
+    - Diff-identity pairs (293): min=-0.1226, mean=0.1744, median=0.1753, max=0.5148
+    - Separation margin: **-0.7469** (129/142 same pairs overlap).
+    - Latency: median 13.6 ms.
+    - Finding: Matches the exact numbers stored in `library_index.json`. Confirms that the synthetic DCT fallback caused the identity fragmentation and false merges in KeepSake.
 
 ---
 
 ## 6. Files Changed in This Turn
 
-- `GOAL.md` (Created): Definitive project objectives, workflow, core rules, and acceptance criteria.
-- `PROGRESS.md` (Created): Persistent loop memory, verified features, known gaps, and failure log.
-- `VERIFIER.md` (Created): Specific verification gates and required empirical evidence.
-- `STOP_CONDITIONS.md` (Created): Safe loop boundaries, circuit breakers, and halt conditions.
+- `test-dataset/manifest.json` (Created): Definitive manifest mapping all 19 photos, 53 detected faces, bounding boxes, checksums, and verified ground-truth labels.
+- `.gitignore` (Updated): Excluded test-dataset image binaries from Git to protect personal photo privacy, while tracking `manifest.json`.
+- `KeepSakeTests/KeepSakeTests.swift` (Updated): Added `testModelEvaluation_BenchmarkCandidatesAgainstGroundTruthManifest` benchmark test.
+- `MODEL_EVALUATION.md` (Created): Comprehensive evaluation report comparing ArcFace, AdaFace, MobileFaceNet, Vision FeaturePrint, and EmbeddingGemma 2, with empirical measurements, licensing review, and Core ML deployment architecture.
+- `PROGRESS.md` (Updated): Recorded empirical findings, baseline verification, and next engineering steps.
 
 ---
 
 ## 7. Most Recent Successful Checkpoint
 
-- **Checkpoint**: Step 2 Local `FaceCluster` model and unit test suite verified; 150/150 tests passing.
-- **Commit/State**: Workspace restored via symlink, builds cleanly, tests pass.
+- **Checkpoint**: Model evaluation milestone complete; 151/151 tests passing; `MODEL_EVALUATION.md` published; Git clean and synchronized with `origin/main` on commit `3f10dfb`.
 
 ---
 
 ## 8. Exact Proposed Next Action for Next Iteration
 
-- **Proposed Task**: Inspect the actual model asset requirements for `buffalo_s` (MobileFaceNet Core ML FP16) and design the genuine model asset integration strategy (or obtain user authorization for the model asset conversion/packaging), replacing the synthetic DCT fallback with verified neural inference before advancing the identity clustering pipeline.
+- **Proposed Task**: Package a genuine Core ML MobileFaceNet model asset (`buffalo_s.mlpackage` / `.mlmodelc`), bundle it in `KeepSake/Resources`, remove the misleading diagnostic fallback log in `ArcFaceRecognitionService.swift`, and verify on-device neural inference on the Apple Neural Engine.
+
