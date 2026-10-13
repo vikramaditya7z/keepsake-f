@@ -34,7 +34,7 @@ struct ArcFaceRecognitionService: FaceRecognitionServiceProtocol {
             let normalizedTensor = try Self.extractNormalizedRGBPlanar(from: alignedCrop)
 
             // 3. Perform deep MobileFaceNet / buffalo_s feature representation inference
-            let rawEmbedding = try Self.inferArcFaceEmbedding(fromNormalizedTensor: normalizedTensor)
+            let (rawEmbedding, isNeural) = try Self.inferArcFaceEmbedding(fromNormalizedTensor: normalizedTensor)
 
             guard rawEmbedding.count == self.embeddingDimension else {
                 throw FaceRecognitionError.invalidEmbeddingDimension(
@@ -49,14 +49,17 @@ struct ArcFaceRecognitionService: FaceRecognitionServiceProtocol {
             let duration = ContinuousClock.now - startTime
             let milliseconds = Double(duration.components.attoseconds) / 1_000_000_000_000_000.0 + Double(duration.components.seconds) * 1000.0
 
+            let activeModelName = isNeural ? self.modelName : "Legacy Synthetic 2D-DCT Fallback"
+
             return FaceEmbedding(
                 photoURL: photoURL,
                 faceId: faceId,
                 vector: normalizedVector,
-                modelName: self.modelName,
+                modelName: activeModelName,
                 inferenceTimeMs: milliseconds
             )
         }.value
+
     }
 
     /// Preprocesses a detected face from a photo file and generates its 512-D ArcFace embedding.
@@ -139,32 +142,100 @@ struct ArcFaceRecognitionService: FaceRecognitionServiceProtocol {
         return rChannel + gChannel + bChannel
     }
 
-    // MARK: - Deep MobileFaceNet (buffalo_s) Feature Inference
+    private static let modelLock = NSLock()
+    private static var cachedMLModel: MLModel?
+    private static var modelLoadedAttempted: Bool = false
 
-    /// Infers the 512-D MobileFaceNet ArcFace feature representation vector.
-    /// Prioritizes compiled Core ML model when available in bundle, executing native deep MobileFaceNet feature extraction.
-    private static func inferArcFaceEmbedding(fromNormalizedTensor tensor: [Float]) throws -> [Float] {
-        // Diagnostic log indicating active recognition backend
-        print("[DIAGNOSTIC] Recognition backend: Core ML buffalo_s / MobileFaceNet")
-        print("[DIAGNOSTIC] Embedding dimension: 512")
+    /// Attempts to locate and load the genuine compiled Core ML buffalo_s model.
+    static func getOrLoadCoreMLModel() -> MLModel? {
+        modelLock.lock()
+        defer { modelLock.unlock() }
 
+        if modelLoadedAttempted {
+            return cachedMLModel
+        }
+        modelLoadedAttempted = true
+
+        guard let modelURL = findCompiledModelURL() else {
+            print("[DIAGNOSTIC] No compiled Core ML model found. Backend: Legacy Synthetic 2D-DCT Fallback")
+            return nil
+        }
+
+        let config = MLModelConfiguration()
+        config.computeUnits = .all
+
+        do {
+            let model = try MLModel(contentsOf: modelURL, configuration: config)
+            cachedMLModel = model
+            print("[DIAGNOSTIC] Recognition backend: Genuine Core ML MobileFaceNet (buffalo_s) at \(modelURL.lastPathComponent)")
+            return model
+        } catch {
+            print("[DIAGNOSTIC] Failed to load Core ML model at \(modelURL.path): \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// Resets cached model state (used for testing failure handling).
+    static func resetCachedModel() {
+        modelLock.lock()
+        defer { modelLock.unlock() }
+        cachedMLModel = nil
+        modelLoadedAttempted = false
+    }
+
+    /// Locates the compiled Core ML model URL across bundle and resource directories.
+    static func findCompiledModelURL() -> URL? {
         let candidateBundles = [Bundle.main, Bundle(for: ArcFaceRecognitionServiceBundleToken.self)]
         for bundle in candidateBundles {
-            if let compiledModelURL = bundle.url(forResource: "ArcFace", withExtension: "mlmodelc") ??
-                                      bundle.url(forResource: "buffalo_s", withExtension: "mlmodelc"),
-               let model = try? MLModel(contentsOf: compiledModelURL) {
-                if let output = try? runCoreMLInference(model: model, inputTensor: tensor) {
-                    return output
+            if let url = bundle.url(forResource: "buffalo_s", withExtension: "mlmodelc") ??
+                         bundle.url(forResource: "ArcFace", withExtension: "mlmodelc") {
+                return url
+            }
+            if let resURL = bundle.resourceURL {
+                let direct = resURL.appendingPathComponent("buffalo_s.mlmodelc")
+                if FileManager.default.fileExists(atPath: direct.path) {
+                    return direct
                 }
             }
         }
 
-        // Deep MobileFaceNet hierarchical convolutional neural representation (Accelerate vDSP)
-        return computeMobileFaceNetEmbedding(tensor: tensor)
+        // Test bundle host application check
+        let testBundle = Bundle(for: ArcFaceRecognitionServiceBundleToken.self)
+        let appResources = testBundle.bundleURL
+            .deletingLastPathComponent() // PlugIns
+            .deletingLastPathComponent() // Contents
+            .appendingPathComponent("Resources/buffalo_s.mlmodelc")
+        if FileManager.default.fileExists(atPath: appResources.path) {
+            return appResources
+        }
+
+        // Development workspace resource fallback
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent() // Services
+            .deletingLastPathComponent() // KeepSake
+            .appendingPathComponent("Resources/buffalo_s.mlmodelc")
+        if FileManager.default.fileExists(atPath: sourceURL.path) {
+            return sourceURL
+        }
+
+        return nil
     }
 
-    /// Evaluates Core ML model if bundled.
-    private static func runCoreMLInference(model: MLModel, inputTensor: [Float]) throws -> [Float]? {
+    /// Infers the 512-D feature vector. Prioritizes genuine Core ML model, falling back to legacy DCT if absent.
+    static func inferArcFaceEmbedding(fromNormalizedTensor tensor: [Float]) throws -> (embedding: [Float], isNeural: Bool) {
+        if let model = getOrLoadCoreMLModel() {
+            if let output = try runCoreMLInference(model: model, inputTensor: tensor) {
+                return (output, true)
+            }
+        }
+
+        // Explicitly identified legacy fallback
+        let legacyOutput = computeMobileFaceNetEmbedding(tensor: tensor)
+        return (legacyOutput, false)
+    }
+
+    /// Evaluates Core ML model inference with input validation and finite checks.
+    static func runCoreMLInference(model: MLModel, inputTensor: [Float]) throws -> [Float]? {
         let shape: [NSNumber] = [1, 3, 112, 112]
         guard let mlArray = try? MLMultiArray(shape: shape, dataType: .float32) else {
             return nil
@@ -182,12 +253,27 @@ struct ArcFaceRecognitionService: FaceRecognitionServiceProtocol {
         }
 
         var result = [Float](repeating: 0, count: 512)
-        let outPtr = outputVector.dataPointer.bindMemory(to: Float.self, capacity: 512)
-        for i in 0..<512 {
-            result[i] = outPtr[i]
+        if outputVector.dataType == .float16 {
+            let outPtr = outputVector.dataPointer.bindMemory(to: Float16.self, capacity: 512)
+            for i in 0..<512 {
+                result[i] = Float(outPtr[i])
+            }
+        } else {
+            let outPtr = outputVector.dataPointer.bindMemory(to: Float.self, capacity: 512)
+            for i in 0..<512 {
+                result[i] = outPtr[i]
+            }
         }
+
+        // Validate finite numbers and non-zero vector
+        let norm = sqrt(result.reduce(0.0) { $0 + ($1 * $1) })
+        guard norm > 0.0001 && norm.isFinite else {
+            return nil
+        }
+
         return result
     }
+
 
     /// High-performance deterministic MobileFaceNet multi-scale hierarchical feature extraction.
     /// Implements deep convolutional inverted residual bottlenecks and global depthwise feature pooling.

@@ -22,6 +22,10 @@ library_index.json
 
 # Local model conversion and generated artifacts
 *.mlmodelc/
+*.mlpackage/
+*.onnx
+*.bin
+*.pth
 
 # Test dataset images (protect personal photos from public repository)
 test-dataset/*

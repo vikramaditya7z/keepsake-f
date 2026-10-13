@@ -2,12 +2,62 @@ import Foundation
 
 /// Data structure representing the serialized state of the library index on disk.
 struct LibraryIndexSnapshot: Codable, Sendable {
-    var schemaVersion: Int = 1
+    var schemaVersion: Int = 2
     var metadata: LibraryMetadataRecord?
     var photos: [PhotoRecord] = []
     var faces: [FaceRecord] = []
     var embeddings: [EmbeddingRecord] = []
     var groups: [GroupRecord] = []
+    var people: [PersonRecord] = []
+    var excludedFaceIds: [UUID] = []
+    var removedAssociations: [RemovedFaceAssociationRecord] = []
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case metadata
+        case photos
+        case faces
+        case embeddings
+        case groups
+        case people
+        case excludedFaceIds
+        case removedAssociations
+    }
+
+    init(
+        schemaVersion: Int = 2,
+        metadata: LibraryMetadataRecord? = nil,
+        photos: [PhotoRecord] = [],
+        faces: [FaceRecord] = [],
+        embeddings: [EmbeddingRecord] = [],
+        groups: [GroupRecord] = [],
+        people: [PersonRecord] = [],
+        excludedFaceIds: [UUID] = [],
+        removedAssociations: [RemovedFaceAssociationRecord] = []
+    ) {
+        self.schemaVersion = schemaVersion
+        self.metadata = metadata
+        self.photos = photos
+        self.faces = faces
+        self.embeddings = embeddings
+        self.groups = groups
+        self.people = people
+        self.excludedFaceIds = excludedFaceIds
+        self.removedAssociations = removedAssociations
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        self.metadata = try container.decodeIfPresent(LibraryMetadataRecord.self, forKey: .metadata)
+        self.photos = try container.decodeIfPresent([PhotoRecord].self, forKey: .photos) ?? []
+        self.faces = try container.decodeIfPresent([FaceRecord].self, forKey: .faces) ?? []
+        self.embeddings = try container.decodeIfPresent([EmbeddingRecord].self, forKey: .embeddings) ?? []
+        self.groups = try container.decodeIfPresent([GroupRecord].self, forKey: .groups) ?? []
+        self.people = try container.decodeIfPresent([PersonRecord].self, forKey: .people) ?? []
+        self.excludedFaceIds = try container.decodeIfPresent([UUID].self, forKey: .excludedFaceIds) ?? []
+        self.removedAssociations = try container.decodeIfPresent([RemovedFaceAssociationRecord].self, forKey: .removedAssociations) ?? []
+    }
 }
 
 /// Actor-isolated local persistent library store managing atomic reads, writes, and photo reconciliation.
@@ -148,8 +198,75 @@ actor LibraryStore {
 
     // MARK: - Face Group Operations
 
+    /// Determines whether a photo record belongs to the specified normalized root folder path,
+    /// respecting explicit ownership when set and using principled fallback for legacy records.
+    private func isPhoto(_ photo: PhotoRecord, matchingNormalizedRoot normalizedRoot: String) -> Bool {
+        if let pRoot = photo.rootFolderPath {
+            return URL(fileURLWithPath: pRoot).standardizedFileURL.path == normalizedRoot
+        }
+        // If relativePath is prefixed with or matches the normalized root
+        if photo.relativePath.hasPrefix(normalizedRoot) {
+            return true
+        }
+        // Legacy fallback 1: Check active library metadata folder
+        if let metaPath = snapshot.metadata?.folderPath {
+            return URL(fileURLWithPath: metaPath).standardizedFileURL.path == normalizedRoot
+        }
+        // Legacy fallback 2: If the snapshot has no other photos explicitly belonging to a different folder,
+        // associate with this single active query folder.
+        let hasOtherExplicitFolders = snapshot.photos.contains { p in
+            if let oRoot = p.rootFolderPath {
+                return URL(fileURLWithPath: oRoot).standardizedFileURL.path != normalizedRoot
+            }
+            return false
+        }
+        return !hasOtherExplicitFolders
+    }
+
     func getGroups() -> [GroupRecord] {
         return snapshot.groups
+    }
+
+    /// Returns groups scoped to a specific root folder path.
+    /// A group belongs to rootPath if its member faces belong to photos in rootPath, or explicit rootFolderPath matches.
+    func getGroups(forRootFolderPath rootPath: String?) -> [GroupRecord] {
+        guard let rootPath = rootPath else {
+            return snapshot.groups
+        }
+        let normalizedRoot = URL(fileURLWithPath: rootPath).standardizedFileURL.path
+        let photoById = Dictionary(uniqueKeysWithValues: snapshot.photos.map { ($0.id, $0) })
+        let faceById = Dictionary(uniqueKeysWithValues: snapshot.faces.map { ($0.id, $0) })
+
+        return snapshot.groups.filter { group in
+            // If group has member faces, verify via member faces' source photos
+            let memberPhotos = group.memberFaceIds.compactMap { faceId -> PhotoRecord? in
+                guard let face = faceById[faceId] else { return nil }
+                return photoById[face.photoId]
+            }
+            if !memberPhotos.isEmpty {
+                return memberPhotos.contains { photo in
+                    isPhoto(photo, matchingNormalizedRoot: normalizedRoot)
+                }
+            }
+
+            // Fallback: check explicit rootFolderPath
+            if let groupRoot = group.rootFolderPath {
+                return URL(fileURLWithPath: groupRoot).standardizedFileURL.path == normalizedRoot
+            } else {
+                let hasOtherFolders = snapshot.photos.contains { p in
+                    if let oRoot = p.rootFolderPath {
+                        return URL(fileURLWithPath: oRoot).standardizedFileURL.path != normalizedRoot
+                    }
+                    return false
+                }
+                return !hasOtherFolders && !snapshot.photos.isEmpty
+            }
+        }
+    }
+
+    /// Returns candidate suggestions scoped to a specific root folder path.
+    func getCandidateGroups(forRootFolderPath rootPath: String? = nil) -> [GroupRecord] {
+        return getGroups(forRootFolderPath: rootPath).filter { $0.reviewStatus == .candidateSuggestion }
     }
 
     func getGroup(byId id: UUID) -> GroupRecord? {
@@ -168,6 +285,13 @@ actor LibraryStore {
         }
         // Prune any other groups that became empty
         snapshot.groups.removeAll { $0.id != group.id && $0.memberFaceIds.isEmpty }
+
+        // Enforce invariant: if candidate suggestion, remove faces from confirmed people
+        if group.reviewStatus == .candidateSuggestion {
+            for pIdx in snapshot.people.indices {
+                snapshot.people[pIdx].confirmedFaceIds.removeAll { newMemberSet.contains($0) }
+            }
+        }
 
         if let idx = snapshot.groups.firstIndex(where: { $0.id == group.id }) {
             snapshot.groups[idx] = groupCopy
@@ -191,6 +315,9 @@ actor LibraryStore {
                 if let rep = groupCopy.representativeFaceId, !uniqueMembers.contains(rep) {
                     groupCopy.representativeFaceId = uniqueMembers.first
                 }
+                if let cov = groupCopy.coverFaceId, !uniqueMembers.contains(cov) {
+                    groupCopy.coverFaceId = nil
+                }
                 sanitizedGroups.append(groupCopy)
             }
         }
@@ -208,41 +335,416 @@ actor LibraryStore {
         return snapshot.faces.first { $0.id == id }
     }
 
-    func getUngroupedFaces() -> [FaceRecord] {
+    func getUngroupedFaces(forRootFolderPath rootPath: String? = nil) -> [FaceRecord] {
         var assignedFaceIds = Set<UUID>()
         for group in snapshot.groups {
-            for faceId in group.memberFaceIds {
-                assignedFaceIds.insert(faceId)
+            if group.reviewStatus != .rejected {
+                for faceId in group.memberFaceIds {
+                    assignedFaceIds.insert(faceId)
+                }
             }
         }
-        return snapshot.faces.filter { !assignedFaceIds.contains($0.id) }
+        for person in snapshot.people {
+            if !person.isDeactivated {
+                for faceId in person.confirmedFaceIds {
+                    assignedFaceIds.insert(faceId)
+                }
+            }
+        }
+
+        let excludedSet = Set(snapshot.excludedFaceIds + snapshot.faces.filter { $0.isExcluded }.map(\.id))
+        let removedAssocSet = Set(snapshot.removedAssociations.map(\.faceId))
+        let unassigned = snapshot.faces.filter { !assignedFaceIds.contains($0.id) && !excludedSet.contains($0.id) && !removedAssocSet.contains($0.id) }
+        guard let rootPath = rootPath else {
+            return unassigned
+        }
+        let normalizedRoot = URL(fileURLWithPath: rootPath).standardizedFileURL.path
+        let photoById = Dictionary(uniqueKeysWithValues: snapshot.photos.map { ($0.id, $0) })
+        return unassigned.filter { face in
+            guard let photo = photoById[face.photoId] else { return false }
+            return isPhoto(photo, matchingNormalizedRoot: normalizedRoot)
+        }
     }
 
-    func getPhotos(forGroup groupId: UUID) -> [PhotoRecord] {
-        guard let group = snapshot.groups.first(where: { $0.id == groupId }) else { return [] }
-        let faceIdSet = Set(group.memberFaceIds)
+    // MARK: - Excluded Faces & Recycle Bin (V7 Remediation)
+
+    /// Marks a detected face as an excluded false detection (Recycle Bin).
+    /// Removes it from any groups (candidate or confirmed) and people identities while preserving the photo.
+    func excludeFace(faceId: UUID, reason: String = "falseDetection") throws {
+        guard let faceIdx = snapshot.faces.firstIndex(where: { $0.id == faceId }) else { return }
+        var face = snapshot.faces[faceIdx]
+        face.isExcluded = true
+        face.excludedAt = Date()
+        face.exclusionReason = reason
+        snapshot.faces[faceIdx] = face
+
+        if !snapshot.excludedFaceIds.contains(faceId) {
+            snapshot.excludedFaceIds.append(faceId)
+        }
+
+        // Remove from all groups
+        for gIdx in snapshot.groups.indices {
+            snapshot.groups[gIdx].memberFaceIds.removeAll { $0 == faceId }
+            if snapshot.groups[gIdx].representativeFaceId == faceId {
+                snapshot.groups[gIdx].representativeFaceId = snapshot.groups[gIdx].memberFaceIds.first
+            }
+            if snapshot.groups[gIdx].coverFaceId == faceId {
+                snapshot.groups[gIdx].coverFaceId = nil
+            }
+            snapshot.groups[gIdx].updatedAt = Date()
+        }
+        snapshot.groups.removeAll { $0.memberFaceIds.isEmpty }
+
+        // Remove from all people
+        for pIdx in snapshot.people.indices {
+            snapshot.people[pIdx].confirmedFaceIds.removeAll { $0 == faceId }
+            if snapshot.people[pIdx].representativeFaceId == faceId {
+                snapshot.people[pIdx].representativeFaceId = snapshot.people[pIdx].confirmedFaceIds.first
+            }
+            if snapshot.people[pIdx].coverFaceId == faceId {
+                snapshot.people[pIdx].coverFaceId = nil
+            }
+            snapshot.people[pIdx].updatedAt = Date()
+        }
+
+        Self.sanitizeSnapshot(&snapshot)
+        try persistToDisk()
+    }
+
+    /// Restores an excluded face from the Recycle Bin back to the unassigned pool.
+    /// Does not automatically assign it to any group or person.
+    func restoreFace(faceId: UUID) throws {
+        guard let faceIdx = snapshot.faces.firstIndex(where: { $0.id == faceId }) else { return }
+        var face = snapshot.faces[faceIdx]
+        face.isExcluded = false
+        face.excludedAt = nil
+        face.exclusionReason = nil
+        snapshot.faces[faceIdx] = face
+
+        snapshot.excludedFaceIds.removeAll { $0 == faceId }
+
+        try persistToDisk()
+    }
+
+    /// Permanently deletes an excluded face detection and its embedding record from the index.
+    /// The original photograph on disk and photo record remain completely intact.
+    func permanentlyDeleteFace(faceId: UUID) throws {
+        guard let face = snapshot.faces.first(where: { $0.id == faceId }) else { return }
+        let photoId = face.photoId
+
+        // Remove from groups and people just in case
+        for gIdx in snapshot.groups.indices {
+            snapshot.groups[gIdx].memberFaceIds.removeAll { $0 == faceId }
+            if snapshot.groups[gIdx].representativeFaceId == faceId {
+                snapshot.groups[gIdx].representativeFaceId = snapshot.groups[gIdx].memberFaceIds.first
+            }
+            if snapshot.groups[gIdx].coverFaceId == faceId {
+                snapshot.groups[gIdx].coverFaceId = nil
+            }
+        }
+        snapshot.groups.removeAll { $0.memberFaceIds.isEmpty }
+
+        for pIdx in snapshot.people.indices {
+            snapshot.people[pIdx].confirmedFaceIds.removeAll { $0 == faceId }
+            if snapshot.people[pIdx].representativeFaceId == faceId {
+                snapshot.people[pIdx].representativeFaceId = snapshot.people[pIdx].confirmedFaceIds.first
+            }
+            if snapshot.people[pIdx].coverFaceId == faceId {
+                snapshot.people[pIdx].coverFaceId = nil
+            }
+        }
+
+        snapshot.faces.removeAll { $0.id == faceId }
+        snapshot.embeddings.removeAll { $0.faceId == faceId }
+        snapshot.excludedFaceIds.removeAll { $0 == faceId }
+
+        // Update photo's detectedFacesCount
+        if let pIdx = snapshot.photos.firstIndex(where: { $0.id == photoId }) {
+            let remainingFaces = snapshot.faces.filter { $0.photoId == photoId }.count
+            snapshot.photos[pIdx].detectedFacesCount = remainingFaces
+        }
+
+        Self.sanitizeSnapshot(&snapshot)
+        try persistToDisk()
+    }
+
+    /// Returns excluded face detections (Recycle Bin), optionally scoped to a root folder.
+    func getExcludedFaces(forRootFolderPath rootPath: String? = nil) -> [FaceRecord] {
+        let excludedSet = Set(snapshot.excludedFaceIds + snapshot.faces.filter { $0.isExcluded }.map(\.id))
+        let excludedFaces = snapshot.faces.filter { excludedSet.contains($0.id) }
+        guard let rootPath = rootPath else {
+            return excludedFaces
+        }
+        let normalizedRoot = URL(fileURLWithPath: rootPath).standardizedFileURL.path
+        let photoById = Dictionary(uniqueKeysWithValues: snapshot.photos.map { ($0.id, $0) })
+        return excludedFaces.filter { face in
+            guard let photo = photoById[face.photoId] else { return false }
+            return isPhoto(photo, matchingNormalizedRoot: normalizedRoot)
+        }
+    }
+
+    // MARK: - Removed from People (Recycle Bin Category B)
+
+    /// Returns removed face associations (Recycle Bin Category B), optionally scoped to a root folder.
+    func getRemovedAssociations(forRootFolderPath rootPath: String? = nil) -> [RemovedFaceAssociationRecord] {
+        guard let rootPath = rootPath else {
+            return snapshot.removedAssociations
+        }
+        let normalizedRoot = URL(fileURLWithPath: rootPath).standardizedFileURL.path
+        let photoById = Dictionary(uniqueKeysWithValues: snapshot.photos.map { ($0.id, $0) })
+        return snapshot.removedAssociations.filter { assoc in
+            guard let photo = photoById[assoc.photoId] else { return false }
+            return isPhoto(photo, matchingNormalizedRoot: normalizedRoot)
+        }
+    }
+
+    /// Moves a confirmed face association into the Removed from People recovery bin.
+    func removeFaceToRecycleBin(faceId: UUID, personId: UUID, reason: String? = nil) throws {
+        guard let personIdx = snapshot.people.firstIndex(where: { $0.id == personId }) else { return }
+        var person = snapshot.people[personIdx]
+        guard person.confirmedFaceIds.contains(faceId) else { return }
+        guard let face = snapshot.faces.first(where: { $0.id == faceId }) else { return }
+
+        // Remove from person's confirmedFaceIds
+        person.confirmedFaceIds.removeAll { $0 == faceId }
+        if person.representativeFaceId == faceId {
+            person.representativeFaceId = person.confirmedFaceIds.first
+        }
+        if person.coverFaceId == faceId {
+            person.coverFaceId = nil
+        }
+        person.updatedAt = Date()
+        snapshot.people[personIdx] = person
+
+        // Also update corresponding GroupRecord if exists
+        if let gIdx = snapshot.groups.firstIndex(where: { $0.id == personId }) {
+            snapshot.groups[gIdx].memberFaceIds.removeAll { $0 == faceId }
+            if snapshot.groups[gIdx].representativeFaceId == faceId {
+                snapshot.groups[gIdx].representativeFaceId = snapshot.groups[gIdx].memberFaceIds.first
+            }
+            if snapshot.groups[gIdx].coverFaceId == faceId {
+                snapshot.groups[gIdx].coverFaceId = nil
+            }
+            snapshot.groups[gIdx].updatedAt = Date()
+        }
+
+        // Add to removedAssociations
+        let record = RemovedFaceAssociationRecord(
+            faceId: faceId,
+            personId: personId,
+            personName: person.name,
+            photoId: face.photoId,
+            removedAt: Date(),
+            reason: reason ?? "Removed from \(person.name)"
+        )
+        snapshot.removedAssociations.removeAll { $0.faceId == faceId }
+        snapshot.removedAssociations.append(record)
+
+        Self.sanitizeSnapshot(&snapshot)
+        try persistToDisk()
+    }
+
+    /// Restores a removed association back to its original person.
+    func restoreRemovedAssociationToPerson(associationId: UUID) throws {
+        guard let assocIdx = snapshot.removedAssociations.firstIndex(where: { $0.id == associationId }) else { return }
+        let assoc = snapshot.removedAssociations[assocIdx]
+
+        guard let personIdx = snapshot.people.firstIndex(where: { $0.id == assoc.personId && !$0.isDeactivated }) else {
+            // Person no longer exists, restore to unassigned instead
+            snapshot.removedAssociations.remove(at: assocIdx)
+            try persistToDisk()
+            return
+        }
+
+        var person = snapshot.people[personIdx]
+        guard let face = snapshot.faces.first(where: { $0.id == assoc.faceId }) else {
+            snapshot.removedAssociations.remove(at: assocIdx)
+            try persistToDisk()
+            return
+        }
+
+        // Check Cannot-Link: person cannot contain another face from the same photo
+        let existingPhotos = Set(snapshot.faces.filter { person.confirmedFaceIds.contains($0.id) }.map(\.photoId))
+        if existingPhotos.contains(face.photoId) {
+            throw IdentityServiceError.cannotLinkViolation("Person '\(person.name)' already has another confirmed face in this photograph.")
+        }
+
+        if !person.confirmedFaceIds.contains(assoc.faceId) {
+            person.confirmedFaceIds.append(assoc.faceId)
+        }
+        if person.representativeFaceId == nil {
+            person.representativeFaceId = assoc.faceId
+        }
+        person.updatedAt = Date()
+        snapshot.people[personIdx] = person
+
+        if let gIdx = snapshot.groups.firstIndex(where: { $0.id == person.id }) {
+            if !snapshot.groups[gIdx].memberFaceIds.contains(assoc.faceId) {
+                snapshot.groups[gIdx].memberFaceIds.append(assoc.faceId)
+            }
+            if snapshot.groups[gIdx].representativeFaceId == nil {
+                snapshot.groups[gIdx].representativeFaceId = assoc.faceId
+            }
+            snapshot.groups[gIdx].updatedAt = Date()
+        }
+
+        snapshot.removedAssociations.remove(at: assocIdx)
+        Self.sanitizeSnapshot(&snapshot)
+        try persistToDisk()
+    }
+
+    /// Restores a removed association back to Unassigned faces.
+    func restoreRemovedAssociationToUnassigned(associationId: UUID) throws {
+        snapshot.removedAssociations.removeAll { $0.id == associationId }
+        try persistToDisk()
+    }
+
+    /// Permanently deletes a removed association record without deleting source photos.
+    func permanentlyDeleteRemovedAssociation(associationId: UUID) throws {
+        snapshot.removedAssociations.removeAll { $0.id == associationId }
+        try persistToDisk()
+    }
+
+    /// Restores all removed associations (matching folder) to unassigned.
+    func restoreAllRemovedAssociationsToUnassigned(forRootFolderPath rootPath: String? = nil) throws {
+        let toRestore = getRemovedAssociations(forRootFolderPath: rootPath)
+        let idsToRestore = Set(toRestore.map(\.id))
+        snapshot.removedAssociations.removeAll { idsToRestore.contains($0.id) }
+        try persistToDisk()
+    }
+
+    /// Permanently empties removed associations (matching folder) without deleting source photos.
+    func emptyRemovedAssociationsBin(forRootFolderPath rootPath: String? = nil) throws {
+        let toDelete = getRemovedAssociations(forRootFolderPath: rootPath)
+        let idsToDelete = Set(toDelete.map(\.id))
+        snapshot.removedAssociations.removeAll { idsToDelete.contains($0.id) }
+        try persistToDisk()
+    }
+
+    /// Returns photos containing faces of a person/group, optionally scoped to a root folder.
+    func getPhotos(forGroup groupId: UUID, rootFolderPath: String? = nil) -> [PhotoRecord] {
+        let faceIdSet: Set<UUID>
+        if let person = snapshot.people.first(where: { $0.id == groupId && !$0.isDeactivated }) {
+            faceIdSet = Set(person.confirmedFaceIds)
+        } else if let group = snapshot.groups.first(where: { $0.id == groupId }) {
+            faceIdSet = Set(group.memberFaceIds)
+        } else {
+            return []
+        }
         let relevantFaces = snapshot.faces.filter { faceIdSet.contains($0.id) }
         let uniquePhotoIds = Set(relevantFaces.map { $0.photoId })
-        return snapshot.photos.filter { uniquePhotoIds.contains($0.id) }
+        let allPhotosForGroup = snapshot.photos.filter { uniquePhotoIds.contains($0.id) }
+        guard let rootFolderPath = rootFolderPath else {
+            return allPhotosForGroup
+        }
+        let normalizedRoot = URL(fileURLWithPath: rootFolderPath).standardizedFileURL.path
+        return allPhotosForGroup.filter { photo in
+            isPhoto(photo, matchingNormalizedRoot: normalizedRoot)
+        }
     }
 
-    func getUniquePhotoCount(forGroup groupId: UUID) -> Int {
-        guard let group = snapshot.groups.first(where: { $0.id == groupId }) else { return 0 }
-        let faceIdSet = Set(group.memberFaceIds)
+    /// Returns the unique photo count for a person/group, optionally scoped to a root folder.
+    func getUniquePhotoCount(forGroup groupId: UUID, rootFolderPath: String? = nil) -> Int {
+        return getPhotos(forGroup: groupId, rootFolderPath: rootFolderPath).count
+    }
+
+    /// Returns faces belonging to a person/group, optionally scoped to a root folder.
+    func getFaces(forGroup groupId: UUID, rootFolderPath: String? = nil) -> [FaceRecord] {
+        let faceIdSet: Set<UUID>
+        if let person = snapshot.people.first(where: { $0.id == groupId && !$0.isDeactivated }) {
+            faceIdSet = Set(person.confirmedFaceIds)
+        } else if let group = snapshot.groups.first(where: { $0.id == groupId }) {
+            faceIdSet = Set(group.memberFaceIds)
+        } else {
+            return []
+        }
         let relevantFaces = snapshot.faces.filter { faceIdSet.contains($0.id) }
-        let uniquePhotoIds = Set(relevantFaces.map { $0.photoId })
-        return uniquePhotoIds.count
+        guard let rootFolderPath = rootFolderPath else {
+            return relevantFaces
+        }
+        let normalizedRoot = URL(fileURLWithPath: rootFolderPath).standardizedFileURL.path
+        let photoById = Dictionary(uniqueKeysWithValues: snapshot.photos.map { ($0.id, $0) })
+        return relevantFaces.filter { face in
+            guard let photo = photoById[face.photoId] else { return false }
+            return isPhoto(photo, matchingNormalizedRoot: normalizedRoot)
+        }
     }
 
-    func getRepresentativeFace(forGroup groupId: UUID) -> FaceRecord? {
-        guard let group = snapshot.groups.first(where: { $0.id == groupId }) else { return nil }
-        if let repId = group.representativeFaceId, let face = snapshot.faces.first(where: { $0.id == repId }) {
-            return face
+    /// Returns the representative or persistent cover face for a person/group, optionally scoped to a root folder.
+    func getRepresentativeFace(forGroup groupId: UUID, rootFolderPath: String? = nil) -> FaceRecord? {
+        let person = snapshot.people.first(where: { $0.id == groupId && !$0.isDeactivated })
+        let group = snapshot.groups.first(where: { $0.id == groupId })
+
+        // 1. Prioritize persistent cover face globally (if valid and active)
+        let coverId = person?.coverFaceId ?? group?.coverFaceId
+        if let coverId = coverId {
+            let isMember = (person?.confirmedFaceIds.contains(coverId) == true) || (group?.memberFaceIds.contains(coverId) == true)
+            if isMember,
+               let face = snapshot.faces.first(where: { $0.id == coverId && !$0.isExcluded }),
+               !snapshot.excludedFaceIds.contains(coverId),
+               !snapshot.removedAssociations.contains(where: { $0.faceId == coverId }) {
+                return face
+            }
         }
-        if let firstId = group.memberFaceIds.first, let face = snapshot.faces.first(where: { $0.id == firstId }) {
-            return face
+
+        // 2. Folder-scoped faces fallback
+        let scopedFaces = getFaces(forGroup: groupId, rootFolderPath: rootFolderPath)
+        let repId = person?.representativeFaceId ?? group?.representativeFaceId
+
+        if !scopedFaces.isEmpty {
+            if let repId = repId, let face = scopedFaces.first(where: { $0.id == repId }) {
+                return face
+            }
+            return scopedFaces.first
         }
+
         return nil
+    }
+
+    /// Sets an explicit, persistent cover face for a person (and their corresponding group).
+    /// Validates that the face exists, is not excluded or removed, and belongs to the person.
+    func setCoverFace(personId: UUID, faceId: UUID) throws {
+        guard let face = snapshot.faces.first(where: { $0.id == faceId }) else {
+            throw IdentityServiceError.faceNotFound(faceId)
+        }
+        guard !face.isExcluded, !snapshot.excludedFaceIds.contains(faceId) else {
+            throw IdentityServiceError.faceNotFound(faceId)
+        }
+        guard !snapshot.removedAssociations.contains(where: { $0.faceId == faceId }) else {
+            throw IdentityServiceError.faceNotFound(faceId)
+        }
+
+        var foundPerson = false
+        if let personIdx = snapshot.people.firstIndex(where: { $0.id == personId && !$0.isDeactivated }) {
+            guard snapshot.people[personIdx].confirmedFaceIds.contains(faceId) else {
+                throw IdentityServiceError.faceNotFound(faceId)
+            }
+            snapshot.people[personIdx].coverFaceId = faceId
+            snapshot.people[personIdx].representativeFaceId = faceId
+            snapshot.people[personIdx].updatedAt = Date()
+            foundPerson = true
+        }
+
+        if let groupIdx = snapshot.groups.firstIndex(where: { $0.id == personId }) {
+            guard snapshot.groups[groupIdx].memberFaceIds.contains(faceId) || foundPerson else {
+                throw IdentityServiceError.faceNotFound(faceId)
+            }
+            snapshot.groups[groupIdx].coverFaceId = faceId
+            snapshot.groups[groupIdx].representativeFaceId = faceId
+            snapshot.groups[groupIdx].updatedAt = Date()
+            foundPerson = true
+        }
+
+        guard foundPerson else {
+            throw IdentityServiceError.groupNotFound(personId)
+        }
+
+        try persistToDisk()
+    }
+
+    /// Updates representative face, also setting coverFaceId for backward-compatibility and persistence.
+    func setRepresentativeFace(groupId: UUID, faceId: UUID) throws {
+        try setCoverFace(personId: groupId, faceId: faceId)
     }
 
     func getGroup(forFaceId faceId: UUID) -> GroupRecord? {
@@ -257,15 +759,280 @@ actor LibraryStore {
         }
     }
 
+    // MARK: - Central People Database Operations
+
+    func getAllPeople() -> [PersonRecord] {
+        return snapshot.people
+    }
+
+    func getActivePeople() -> [PersonRecord] {
+        return snapshot.people.filter { !$0.isDeactivated }
+    }
+
+    func getPerson(byId id: UUID) -> PersonRecord? {
+        return snapshot.people.first { $0.id == id }
+    }
+
+    func savePerson(_ person: PersonRecord) throws {
+        if let idx = snapshot.people.firstIndex(where: { $0.id == person.id }) {
+            snapshot.people[idx] = person
+        } else {
+            snapshot.people.append(person)
+        }
+        try persistToDisk()
+    }
+
+    func savePeople(_ people: [PersonRecord]) throws {
+        for person in people {
+            if let idx = snapshot.people.firstIndex(where: { $0.id == person.id }) {
+                snapshot.people[idx] = person
+            } else {
+                snapshot.people.append(person)
+            }
+        }
+        try persistToDisk()
+    }
+
+    /// Safely deletes or removes a person from the central database.
+    /// Unlinks confirmed faces and releases them back to unassigned. Never deletes source photos.
+    func deletePerson(byId id: UUID) throws {
+        var faceIdsToRelease = Set<UUID>()
+
+        // 1. Collect faces from PersonRecord
+        if let person = snapshot.people.first(where: { $0.id == id }) {
+            faceIdsToRelease.formUnion(person.confirmedFaceIds)
+        }
+
+        // 2. Collect faces from any associated GroupRecord
+        for group in snapshot.groups where group.id == id {
+            faceIdsToRelease.formUnion(group.memberFaceIds)
+        }
+
+        // 3. Remove PersonRecord from central people database
+        snapshot.people.removeAll { $0.id == id }
+
+        // 4. Remove all groups associated with this person
+        snapshot.groups.removeAll { $0.id == id }
+
+        // 5. Remove released faces from any remaining groups
+        if !faceIdsToRelease.isEmpty {
+            for idx in snapshot.groups.indices {
+                snapshot.groups[idx].memberFaceIds.removeAll { faceIdsToRelease.contains($0) }
+                if let rep = snapshot.groups[idx].representativeFaceId, faceIdsToRelease.contains(rep) {
+                    snapshot.groups[idx].representativeFaceId = snapshot.groups[idx].memberFaceIds.first
+                }
+            }
+            snapshot.groups.removeAll { $0.memberFaceIds.isEmpty }
+        }
+
+        // 6. Clean up any removed associations belonging to this person
+        snapshot.removedAssociations.removeAll { $0.personId == id }
+
+        Self.sanitizeSnapshot(&snapshot)
+        try persistToDisk()
+    }
+
+    /// Merges source person into target person atomically in the authoritative store.
+    func mergePeople(targetPersonId: UUID, sourcePersonId: UUID) throws {
+        guard targetPersonId != sourcePersonId else { return }
+        guard let targetIdx = snapshot.people.firstIndex(where: { $0.id == targetPersonId }) else { return }
+        guard let sourceIdx = snapshot.people.firstIndex(where: { $0.id == sourcePersonId }) else { return }
+
+        let sourcePerson = snapshot.people[sourceIdx]
+        var targetPerson = snapshot.people[targetIdx]
+
+        // 1. Merge confirmed faces without duplicates
+        var combinedFaces = targetPerson.confirmedFaceIds
+        for fId in sourcePerson.confirmedFaceIds {
+            if !combinedFaces.contains(fId) {
+                combinedFaces.append(fId)
+            }
+        }
+        targetPerson.confirmedFaceIds = combinedFaces
+
+        // 2. Reconcile representative face and cover face
+        if targetPerson.representativeFaceId == nil || !combinedFaces.contains(targetPerson.representativeFaceId!) {
+            targetPerson.representativeFaceId = sourcePerson.representativeFaceId ?? combinedFaces.first
+        }
+        if targetPerson.coverFaceId == nil || !combinedFaces.contains(targetPerson.coverFaceId!) {
+            if let sourceCover = sourcePerson.coverFaceId, combinedFaces.contains(sourceCover) {
+                targetPerson.coverFaceId = sourceCover
+            } else {
+                targetPerson.coverFaceId = nil
+            }
+        }
+        targetPerson.updatedAt = Date()
+        snapshot.people[targetIdx] = targetPerson
+
+        // 3. Remove source person
+        snapshot.people.remove(at: sourceIdx)
+
+        // 4. Merge associated GroupRecords if present
+        if let targetGroupIdx = snapshot.groups.firstIndex(where: { $0.id == targetPersonId }) {
+            var targetGroup = snapshot.groups[targetGroupIdx]
+            var groupFaces = targetGroup.memberFaceIds
+            if let sourceGroup = snapshot.groups.first(where: { $0.id == sourcePersonId }) {
+                for fId in sourceGroup.memberFaceIds {
+                    if !groupFaces.contains(fId) {
+                        groupFaces.append(fId)
+                    }
+                }
+            }
+            targetGroup.memberFaceIds = groupFaces
+            if targetGroup.representativeFaceId == nil || !groupFaces.contains(targetGroup.representativeFaceId!) {
+                targetGroup.representativeFaceId = targetPerson.representativeFaceId
+            }
+            targetGroup.coverFaceId = targetPerson.coverFaceId
+            targetGroup.updatedAt = Date()
+            snapshot.groups[targetGroupIdx] = targetGroup
+        }
+        // Remove source group
+        snapshot.groups.removeAll { $0.id == sourcePersonId }
+
+        Self.sanitizeSnapshot(&snapshot)
+        try persistToDisk()
+    }
+
+    /// Removes an individual face association from a person. Releases face to unassigned.
+    func removeFaceFromPerson(personId: UUID, faceId: UUID) throws {
+        if let personIdx = snapshot.people.firstIndex(where: { $0.id == personId }) {
+            var person = snapshot.people[personIdx]
+            person.confirmedFaceIds.removeAll { $0 == faceId }
+            if person.representativeFaceId == faceId {
+                person.representativeFaceId = person.confirmedFaceIds.first
+            }
+            if person.coverFaceId == faceId {
+                person.coverFaceId = nil
+            }
+            person.updatedAt = Date()
+
+            if person.confirmedFaceIds.isEmpty {
+                // Empty identity: mark deactivated and prune group
+                person.isDeactivated = true
+                snapshot.people[personIdx] = person
+                snapshot.groups.removeAll { $0.id == personId }
+            } else {
+                snapshot.people[personIdx] = person
+                if let groupIdx = snapshot.groups.firstIndex(where: { $0.id == personId }) {
+                    snapshot.groups[groupIdx].memberFaceIds.removeAll { $0 == faceId }
+                    if snapshot.groups[groupIdx].representativeFaceId == faceId {
+                        snapshot.groups[groupIdx].representativeFaceId = person.representativeFaceId
+                    }
+                    if snapshot.groups[groupIdx].coverFaceId == faceId {
+                        snapshot.groups[groupIdx].coverFaceId = nil
+                    }
+                    snapshot.groups[groupIdx].updatedAt = Date()
+                }
+            }
+        }
+
+        // Also check if face was in any GroupRecord directly (e.g. candidate suggestion)
+        for idx in snapshot.groups.indices {
+            if snapshot.groups[idx].memberFaceIds.contains(faceId) {
+                snapshot.groups[idx].memberFaceIds.removeAll { $0 == faceId }
+                if snapshot.groups[idx].representativeFaceId == faceId {
+                    snapshot.groups[idx].representativeFaceId = snapshot.groups[idx].memberFaceIds.first
+                }
+                if snapshot.groups[idx].coverFaceId == faceId {
+                    snapshot.groups[idx].coverFaceId = nil
+                }
+                snapshot.groups[idx].updatedAt = Date()
+            }
+        }
+        // Prune empty groups
+        snapshot.groups.removeAll { $0.memberFaceIds.isEmpty }
+
+        Self.sanitizeSnapshot(&snapshot)
+        try persistToDisk()
+    }
+
+    /// Assigns multiple faces to a person in the authoritative store.
+    func assignFacesToPerson(personId: UUID, faceIds: [UUID]) throws {
+        guard let personIdx = snapshot.people.firstIndex(where: { $0.id == personId }) else { return }
+        var person = snapshot.people[personIdx]
+        let newFaceSet = Set(faceIds)
+
+        // Enforce invariant: remove these faces from all other people & groups
+        for pIdx in snapshot.people.indices {
+            if snapshot.people[pIdx].id != personId {
+                snapshot.people[pIdx].confirmedFaceIds.removeAll { newFaceSet.contains($0) }
+                if let rep = snapshot.people[pIdx].representativeFaceId, newFaceSet.contains(rep) {
+                    snapshot.people[pIdx].representativeFaceId = snapshot.people[pIdx].confirmedFaceIds.first
+                }
+                if let cov = snapshot.people[pIdx].coverFaceId, newFaceSet.contains(cov) {
+                    snapshot.people[pIdx].coverFaceId = nil
+                }
+            }
+        }
+        for gIdx in snapshot.groups.indices {
+            if snapshot.groups[gIdx].id != personId {
+                snapshot.groups[gIdx].memberFaceIds.removeAll { newFaceSet.contains($0) }
+                if let rep = snapshot.groups[gIdx].representativeFaceId, newFaceSet.contains(rep) {
+                    snapshot.groups[gIdx].representativeFaceId = snapshot.groups[gIdx].memberFaceIds.first
+                }
+                if let cov = snapshot.groups[gIdx].coverFaceId, newFaceSet.contains(cov) {
+                    snapshot.groups[gIdx].coverFaceId = nil
+                }
+            }
+        }
+        snapshot.groups.removeAll { $0.id != personId && $0.memberFaceIds.isEmpty }
+
+        // Add to target person
+        var updatedFaces = person.confirmedFaceIds
+        for fId in faceIds {
+            if !updatedFaces.contains(fId) {
+                updatedFaces.append(fId)
+            }
+        }
+        person.confirmedFaceIds = updatedFaces
+        if person.representativeFaceId == nil || !updatedFaces.contains(person.representativeFaceId!) {
+            person.representativeFaceId = updatedFaces.first
+        }
+        person.isDeactivated = false
+        person.updatedAt = Date()
+        snapshot.people[personIdx] = person
+
+        // Update or create target GroupRecord
+        if let gIdx = snapshot.groups.firstIndex(where: { $0.id == personId }) {
+            snapshot.groups[gIdx].memberFaceIds = updatedFaces
+            snapshot.groups[gIdx].representativeFaceId = person.representativeFaceId
+            snapshot.groups[gIdx].coverFaceId = person.coverFaceId
+            snapshot.groups[gIdx].updatedAt = Date()
+        } else {
+            let maxIndex = snapshot.groups.map(\.groupIndex).max() ?? 0
+            let newGroup = GroupRecord(
+                id: personId,
+                groupIndex: maxIndex + 1,
+                customName: person.name,
+                coverFaceId: person.coverFaceId,
+                representativeFaceId: person.representativeFaceId,
+                memberFaceIds: updatedFaces,
+                centroid: person.centroid,
+                identityAnchors: person.identityAnchors,
+                averageSimilarity: 1.0,
+                minSimilarity: 1.0,
+                thresholdUsed: 0.54,
+                reviewStatus: .confirmed
+            )
+            snapshot.groups.append(newGroup)
+        }
+
+        Self.sanitizeSnapshot(&snapshot)
+        try persistToDisk()
+    }
+
     // MARK: - Reconciliation
 
     /// Reconciles scanned files on disk against the persistent index.
-    /// Identifies NEW, CHANGED, UNCHANGED, and REMOVED photos without running CV/ML.
+    /// Scopes photo changes and removals strictly to the folder being reconciled,
+    /// ensuring photos and identities from other folders are never deleted.
     func reconcile(scannedPhotos: [PhotoItem], rootFolderURL: URL) throws -> LibraryReconciliationResult {
         let rootPath = rootFolderURL.standardizedFileURL.path
         var existingByPath: [String: PhotoRecord] = [:]
         for p in snapshot.photos {
-            existingByPath[p.relativePath] = p
+            if p.rootFolderPath == rootPath || p.rootFolderPath == nil {
+                existingByPath[p.relativePath] = p
+            }
         }
 
         var newPhotos: [PhotoRecord] = []
@@ -302,6 +1069,7 @@ actor LibraryStore {
                     updated.fileFingerprint = currentFingerprint
                     updated.processingState = .needsReprocessing
                     updated.failureReason = nil
+                    updated.rootFolderPath = rootPath
 
                     // Clear stale faces & embeddings for changed photo
                     snapshot.faces.removeAll { $0.photoId == updated.id }
@@ -312,8 +1080,17 @@ actor LibraryStore {
                     }
                     changedPhotos.append(updated)
                 } else {
-                    // UNCHANGED PHOTO
-                    unchangedPhotos.append(existing)
+                    // UNCHANGED PHOTO - ensure rootFolderPath is recorded
+                    if existing.rootFolderPath != rootPath {
+                        var updated = existing
+                        updated.rootFolderPath = rootPath
+                        if let idx = snapshot.photos.firstIndex(where: { $0.id == updated.id }) {
+                            snapshot.photos[idx] = updated
+                        }
+                        unchangedPhotos.append(updated)
+                    } else {
+                        unchangedPhotos.append(existing)
+                    }
                 }
             } else {
                 // NEW PHOTO
@@ -322,18 +1099,28 @@ actor LibraryStore {
                     filename: item.filename,
                     fileSize: item.fileSize,
                     modificationDate: dateMod,
-                    processingState: .discovered
+                    processingState: .discovered,
+                    rootFolderPath: rootPath
                 )
                 snapshot.photos.append(newPhoto)
                 newPhotos.append(newPhoto)
             }
         }
 
-        // REMOVED PHOTOS: in index but missing from disk
+        // REMOVED PHOTOS: only consider photos that belong to THIS root folder
         var removedPhotos: [PhotoRecord] = []
         var removedPhotoIds: Set<UUID> = []
         for photo in snapshot.photos {
-            if !seenRelativePaths.contains(photo.relativePath) {
+            let isFromThisFolder: Bool
+            if let f = photo.rootFolderPath {
+                isFromThisFolder = (f == rootPath)
+            } else if let metaPath = snapshot.metadata?.folderPath {
+                isFromThisFolder = (metaPath == rootPath)
+            } else {
+                isFromThisFolder = true
+            }
+
+            if isFromThisFolder && !seenRelativePaths.contains(photo.relativePath) {
                 removedPhotos.append(photo)
                 removedPhotoIds.insert(photo.id)
             }
@@ -383,10 +1170,27 @@ actor LibraryStore {
                     if let rep = groupCopy.representativeFaceId, !activeMembers.contains(rep) {
                         groupCopy.representativeFaceId = activeMembers.first
                     }
+                    if let cov = groupCopy.coverFaceId, !activeMembers.contains(cov) {
+                        groupCopy.coverFaceId = nil
+                    }
                     sanitizedGroups.append(groupCopy)
                 }
             }
             snapshot.groups = sanitizedGroups
+
+            // Sanitize People records: retain active faces, update representative and cover face if needed
+            for i in snapshot.people.indices {
+                snapshot.people[i].confirmedFaceIds = snapshot.people[i].confirmedFaceIds.filter { validFaceIds.contains($0) }
+                if let rep = snapshot.people[i].representativeFaceId, !validFaceIds.contains(rep) {
+                    snapshot.people[i].representativeFaceId = snapshot.people[i].confirmedFaceIds.first
+                }
+                if let cov = snapshot.people[i].coverFaceId, !validFaceIds.contains(cov) {
+                    snapshot.people[i].coverFaceId = nil
+                }
+            }
+
+            snapshot.excludedFaceIds.removeAll { !validFaceIds.contains($0) }
+            snapshot.removedAssociations.removeAll { !validFaceIds.contains($0.faceId) }
         } else {
             var seenFaceIds = Set<UUID>()
             var sanitizedGroups: [GroupRecord] = []
@@ -395,6 +1199,9 @@ actor LibraryStore {
                 let uniqueMembers = group.memberFaceIds.filter { seenFaceIds.insert($0).inserted }
                 groupCopy.memberFaceIds = uniqueMembers
                 if !uniqueMembers.isEmpty {
+                    if let cov = groupCopy.coverFaceId, !uniqueMembers.contains(cov) {
+                        groupCopy.coverFaceId = nil
+                    }
                     sanitizedGroups.append(groupCopy)
                 }
             }
@@ -418,7 +1225,36 @@ actor LibraryStore {
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
             var snap = try decoder.decode(LibraryIndexSnapshot.self, from: data)
-            let wasModified = Self.sanitizeSnapshot(&snap)
+            var wasModified = Self.sanitizeSnapshot(&snap)
+
+            // Auto-bootstrap legacy confirmed groups into central PersonRecord collection if empty
+            if snap.people.isEmpty && !snap.groups.isEmpty {
+                var bootstrapped: [PersonRecord] = []
+                for group in snap.groups {
+                    if group.reviewStatus == .confirmed || (group.customName != nil && !group.customName!.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
+                        let name = group.customName?.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let personName = (name != nil && !name!.isEmpty) ? name! : "Person \(group.groupIndex)"
+                        let person = PersonRecord(
+                            id: group.id,
+                            name: personName,
+                            coverFaceId: group.coverFaceId,
+                            representativeFaceId: group.representativeFaceId,
+                            confirmedFaceIds: group.memberFaceIds,
+                            centroidData: group.centroidData,
+                            identityAnchorsData: group.identityAnchorsData,
+                            createdAt: group.createdAt,
+                            updatedAt: group.updatedAt,
+                            isDeactivated: false
+                        )
+                        bootstrapped.append(person)
+                    }
+                }
+                if !bootstrapped.isEmpty {
+                    snap.people = bootstrapped
+                    wasModified = true
+                }
+            }
+
             return (snap, wasModified)
         } catch {
             print("Failed to load library index from \(url.path): \(error.localizedDescription)")

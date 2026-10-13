@@ -56,21 +56,37 @@ actor LibraryProcessingCoordinator {
 
             // Detect faces locally using Vision
             let detectedFaces = try await faceDetector.detectFaces(in: photoURL)
+            let existingExcluded = (await libraryStore.getExcludedFaces()).filter { $0.photoId == photoRecord.id }
             var faceRecords: [FaceRecord] = []
             var embeddingRecords: [EmbeddingRecord] = []
 
             for detected in detectedFaces {
+                let matchedExcluded = existingExcluded.first(where: {
+                    let b1 = $0.boundingBox
+                    let b2 = detected.boundingBox
+                    return abs(b1.midX - b2.midX) < 0.05 && abs(b1.midY - b2.midY) < 0.05
+                })
+                let isExcluded = matchedExcluded != nil
+                let faceId = matchedExcluded?.id ?? detected.id
+
                 let faceRecord = FaceRecord(
-                    id: detected.id,
+                    id: faceId,
                     photoId: photoRecord.id,
                     boundingBox: detected.boundingBox,
                     confidence: detected.confidence,
-                    processingState: .detected
+                    processingState: .detected,
+                    isExcluded: isExcluded,
+                    excludedAt: matchedExcluded?.excludedAt,
+                    exclusionReason: matchedExcluded?.exclusionReason
                 )
                 faceRecords.append(faceRecord)
 
-                // Crop face and extract 512-D ArcFace embedding
-                if let crop = try? preprocessor.cropFace(from: photoURL, normalizedBox: detected.boundingBox) {
+                if isExcluded {
+                    continue
+                }
+
+                // Crop or align face and extract 512-D ArcFace embedding with 5-point landmark alignment
+                if let crop = try? preprocessor.cropOrAlignFace(from: photoURL, normalizedBox: detected.boundingBox, landmarks: detected.landmarks) {
                     do {
                         let embedding = try await recognitionService.generateEmbedding(
                             from: crop,
@@ -215,21 +231,76 @@ actor LibraryProcessingCoordinator {
 
     /// Re-clusters all stored embeddings in the library with the specified threshold using PersonIdentityProfiles.
     func reclusterLibrary(rootFolderURL: URL, threshold: Float, enableDiagnostics: Bool = false) async throws {
+        let activeRootPath = rootFolderURL.standardizedFileURL.path
         let allPhotos = await libraryStore.getAllPhotos()
         let validPhotoIdSet = Set(allPhotos.map(\.id))
         let photoById = Dictionary(uniqueKeysWithValues: allPhotos.map { ($0.id, $0) })
-        let allFaces = (await libraryStore.getAllFaces()).filter { validPhotoIdSet.contains($0.photoId) }
-        let activeFaceIdSet = Set(allFaces.map(\.id))
-        let faceToPhotoId = Dictionary(uniqueKeysWithValues: allFaces.map { ($0.id, $0.photoId) })
 
-        // Only cluster active, non-orphaned embeddings belonging to valid photos
-        let allEmbeddings = (await libraryStore.getEmbeddings()).filter { activeFaceIdSet.contains($0.faceId) && validPhotoIdSet.contains($0.photoId) }
-        guard !allEmbeddings.isEmpty else {
-            try await libraryStore.saveGroups([])
+        let existingGroups = await libraryStore.getGroups()
+        let activePeople = await libraryStore.getActivePeople()
+        let excludedFaces = await libraryStore.getExcludedFaces()
+        let excludedFaceIdSet = Set(excludedFaces.map(\.id))
+
+        // 1. Filter photos belonging to THIS active root folder
+        let activePhotos = allPhotos.filter { photo in
+            if let pRoot = photo.rootFolderPath {
+                return URL(fileURLWithPath: pRoot).standardizedFileURL.path == activeRootPath
+            } else {
+                let hasOtherFolders = allPhotos.contains { p in
+                    if let oRoot = p.rootFolderPath {
+                        return URL(fileURLWithPath: oRoot).standardizedFileURL.path != activeRootPath
+                    }
+                    return false
+                }
+                return !hasOtherFolders
+            }
+        }
+        let activePhotoIdSet = Set(activePhotos.map(\.id))
+
+        // If active folder has zero photos, prune candidate groups for this folder and preserve others
+        guard !activePhotoIdSet.isEmpty else {
+            let otherFolderGroups = existingGroups.filter { g in
+                if let gRoot = g.rootFolderPath {
+                    return URL(fileURLWithPath: gRoot).standardizedFileURL.path != activeRootPath
+                }
+                return true
+            }
+            try await libraryStore.saveGroups(otherFolderGroups)
             return
         }
 
-        let faceLookup = Dictionary(uniqueKeysWithValues: allFaces.map { ($0.id, DetectedFace(id: $0.id, boundingBox: $0.boundingBox, confidence: $0.confidence)) })
+        let removedAssociationFaceIds = Set((await libraryStore.getRemovedAssociations()).map(\.faceId))
+
+        // 2. Filter active faces in this folder (excluding false detections and removed associations)
+        let allFaces = (await libraryStore.getAllFaces()).filter {
+            validPhotoIdSet.contains($0.photoId) &&
+            !excludedFaceIdSet.contains($0.id) &&
+            !removedAssociationFaceIds.contains($0.id) &&
+            !$0.isExcluded
+        }
+        let activeFolderFaces = allFaces.filter { activePhotoIdSet.contains($0.photoId) }
+        let activeFaceIdSet = Set(activeFolderFaces.map(\.id))
+        let faceToPhotoId = Dictionary(uniqueKeysWithValues: allFaces.map { ($0.id, $0.photoId) })
+
+        // 3. Filter active embeddings in this folder
+        let allEmbeddings = (await libraryStore.getEmbeddings()).filter {
+            activeFaceIdSet.contains($0.faceId) &&
+            !excludedFaceIdSet.contains($0.faceId) &&
+            !removedAssociationFaceIds.contains($0.faceId) &&
+            activePhotoIdSet.contains($0.photoId)
+        }
+        guard !allEmbeddings.isEmpty else {
+            let otherFolderGroups = existingGroups.filter { g in
+                if let gRoot = g.rootFolderPath {
+                    return URL(fileURLWithPath: gRoot).standardizedFileURL.path != activeRootPath
+                }
+                return true
+            }
+            try await libraryStore.saveGroups(otherFolderGroups)
+            return
+        }
+
+        let faceLookup = Dictionary(uniqueKeysWithValues: activeFolderFaces.map { ($0.id, DetectedFace(id: $0.id, boundingBox: $0.boundingBox, confidence: $0.confidence)) })
         let embeddingByFaceId = Dictionary(uniqueKeysWithValues: allEmbeddings.map { ($0.faceId, $0) })
 
         // Convert EmbeddingRecords to domain FaceEmbedding objects with accurate photo URLs
@@ -246,18 +317,42 @@ actor LibraryProcessingCoordinator {
             )
         }
 
-        let existingGroups = await libraryStore.getGroups()
         print("[DIAGNOSTIC] === RECLUSTER START ===")
-        print("[DIAGNOSTIC] Step 1: Loaded \(existingGroups.count) existing GroupRecords from LibraryStore.")
+        print("[DIAGNOSTIC] Step 1: Loaded \(existingGroups.count) existing GroupRecords and \(activePeople.count) active PersonRecords from LibraryStore.")
 
-        // 1. Build Established PersonIdentityProfiles from groups with user curation
-        // (groups with a customName or manually confirmed/merged by the user)
+        // 1. Build Established PersonIdentityProfiles from:
+        //    a) Central PersonRecords (authoritative persistent identity memory)
+        //    b) Existing GroupRecords with user curation or confirmed status
         var establishedProfiles: [PersonIdentityProfile] = []
+        var seenProfileIds = Set<UUID>()
+
+        for person in activePeople {
+            guard let centroid = person.centroid else { continue }
+            let activeMembers = person.confirmedFaceIds.filter { activeFaceIdSet.contains($0) }
+            let anchors = person.identityAnchors.isEmpty ? [centroid] : person.identityAnchors
+
+            let profile = PersonIdentityProfile(
+                id: person.id,
+                groupIndex: establishedProfiles.count + 1,
+                customName: person.name,
+                representativeFaceId: person.representativeFaceId,
+                memberFaceIds: Set(activeMembers),
+                centroid: centroid,
+                identityAnchors: anchors,
+                isManuallyConfirmed: true
+            )
+            establishedProfiles.append(profile)
+            seenProfileIds.insert(person.id)
+        }
+
         for g in existingGroups {
+            guard !seenProfileIds.contains(g.id) else { continue }
             let activeMembers = g.memberFaceIds.filter { activeFaceIdSet.contains($0) }
             guard !activeMembers.isEmpty else { continue }
 
-            let isUserCurated = (g.customName != nil && !g.customName!.isEmpty) || g.algorithmVersion.contains("manual")
+            let isUserCurated = (g.customName != nil && !g.customName!.isEmpty) ||
+                                g.reviewStatus == .confirmed ||
+                                g.algorithmVersion.contains("manual")
             guard isUserCurated else { continue }
 
             let memberVectors = activeMembers.compactMap { embeddingByFaceId[$0]?.vector }
@@ -289,8 +384,9 @@ actor LibraryProcessingCoordinator {
                 isManuallyConfirmed: true
             )
             establishedProfiles.append(profile)
+            seenProfileIds.insert(g.id)
         }
-        print("[DIAGNOSTIC] Step 2: Constructed \(establishedProfiles.count) user-curated PersonIdentityProfiles.")
+        print("[DIAGNOSTIC] Step 2: Constructed \(establishedProfiles.count) user-curated and persistent PersonIdentityProfiles.")
 
         // 2. Discover / Cluster all active domain embeddings using graph-based coherent clustering
         let clusteringResult = try await clusteringService.cluster(
@@ -497,6 +593,9 @@ actor LibraryProcessingCoordinator {
         }
 
         // Pass B: Stage 2 — Cross-Discovered-Group Reconciliation
+        let rejectedGroups = existingGroups.filter { $0.reviewStatus == .rejected }
+        let rejectedFaceIdSets = rejectedGroups.map { Set($0.memberFaceIds) }
+
         struct CandidateCluster {
             var faceIds: [UUID]
             var vectors: [[Float]]
@@ -504,6 +603,7 @@ actor LibraryProcessingCoordinator {
             var anchors: [[Float]]
             var stableGroupId: UUID?
             var inheritedName: String?
+            var isRejected: Bool
         }
 
         var candidateClusters: [CandidateCluster] = []
@@ -517,6 +617,7 @@ actor LibraryProcessingCoordinator {
 
             var stableGroupId: UUID? = nil
             var inheritedName: String? = nil
+            var isRejected: Bool = false
 
             for fId in unassignedFaces {
                 if let prevGroup = existingGroups.first(where: { $0.memberFaceIds.contains(fId) && !usedGroupIds.contains($0.id) }) {
@@ -526,7 +627,14 @@ actor LibraryProcessingCoordinator {
                     if inheritedName == nil {
                         inheritedName = prevGroup.customName
                     }
+                    if prevGroup.reviewStatus == .rejected {
+                        isRejected = true
+                    }
                 }
+            }
+
+            if rejectedFaceIdSets.contains(where: { $0 == Set(unassignedFaces) }) {
+                isRejected = true
             }
 
             let clusterCentroid = group.centroid
@@ -542,7 +650,8 @@ actor LibraryProcessingCoordinator {
                 centroid: clusterCentroid,
                 anchors: clusterAnchors,
                 stableGroupId: stableGroupId,
-                inheritedName: inheritedName
+                inheritedName: inheritedName,
+                isRejected: isRejected
             ))
         }
 
@@ -707,6 +816,7 @@ actor LibraryProcessingCoordinator {
                 if cA.inheritedName == nil {
                     cA.inheritedName = cB.inheritedName
                 }
+                cA.isRejected = cA.isRejected || cB.isRejected
 
                 candidateClusters[i] = cA
                 candidateClusters.remove(at: j)
@@ -799,10 +909,11 @@ actor LibraryProcessingCoordinator {
                 minSimilarity: minSim,
                 thresholdUsed: threshold,
                 algorithmName: clusteringService.algorithmName,
-                algorithmVersion: "v2"
+                algorithmVersion: "v2",
+                reviewStatus: .confirmed
             )
             groupRecords.append(record)
-            print("[DIAGNOSTIC] Stage 3A: Preserved/Updated GroupRecord ID \(record.id) (\(record.displayName)) with \(record.memberFaceIds.count) faces.")
+            print("[DIAGNOSTIC] Stage 3A: Preserved/Updated GroupRecord ID \(record.id) (\(record.displayName)) with \(record.memberFaceIds.count) faces (Status: \(record.reviewStatus)).")
         }
 
         // 3B: Build groups from reconciled candidate clusters (Fix 3: strictly verify unassigned faces)
@@ -850,6 +961,9 @@ actor LibraryProcessingCoordinator {
                 minSim = mSim
             }
 
+            let isInheritedConfirmed = candidate.inheritedName != nil && !candidate.inheritedName!.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let candidateReviewStatus: IdentityReviewStatus = isInheritedConfirmed ? .confirmed : (candidate.isRejected ? .rejected : .candidateSuggestion)
+
             let record = GroupRecord(
                 id: finalGroupId,
                 groupIndex: groupRecords.count + 1,
@@ -862,11 +976,13 @@ actor LibraryProcessingCoordinator {
                 minSimilarity: minSim,
                 thresholdUsed: threshold,
                 algorithmName: clusteringService.algorithmName,
-                algorithmVersion: "v2"
+                algorithmVersion: "v2",
+                reviewStatus: candidateReviewStatus,
+                rootFolderPath: rootFolderURL.standardizedFileURL.path
             )
             groupRecords.append(record)
             for fId in unassignedFaces {
-                print("[DIAGNOSTIC] New face \(fId) -> rejected -> Target GroupRecord ID: \(finalGroupId) -> Stage 3: created new GroupRecord (\(record.displayName))")
+                print("[DIAGNOSTIC] New face \(fId) -> candidate cluster -> Target GroupRecord ID: \(finalGroupId) -> Stage 3: created new GroupRecord (\(record.displayName), Status: \(record.reviewStatus))")
             }
         }
 
@@ -881,12 +997,52 @@ actor LibraryProcessingCoordinator {
             return a.id.uuidString < b.id.uuidString
         }
 
-        for i in 0..<groupRecords.count {
-            groupRecords[i].groupIndex = i + 1
+        // Preserve groups from other folders whose member faces or rootFolderPath are not in the currently active folder
+        let otherFolderGroups = existingGroups.filter { g in
+            if let gRoot = g.rootFolderPath {
+                return gRoot != activeRootPath
+            }
+            return g.memberFaceIds.allSatisfy { !activeFaceIdSet.contains($0) }
         }
 
-        try await libraryStore.saveGroups(groupRecords)
-        print("[DIAGNOSTIC] Step 7: Saved \(groupRecords.count) final GroupRecords to LibraryStore.")
+        // Also preserve existing rejected groups from active folder whose faces were not re-assigned to confirmed profiles
+        let existingRejectedPreserved = existingGroups.compactMap { g -> GroupRecord? in
+            guard g.reviewStatus == .rejected && !usedGroupIds.contains(g.id) else { return nil }
+            let remainingFaces = g.memberFaceIds.filter { activeFaceIdSet.contains($0) && !assignedFaceIds.contains($0) }
+            guard !remainingFaces.isEmpty else { return nil }
+            var updated = g
+            updated.memberFaceIds = remainingFaces
+            return updated
+        }
+
+        var allGroupsToSave = groupRecords + otherFolderGroups + existingRejectedPreserved
+
+        for i in 0..<allGroupsToSave.count {
+            allGroupsToSave[i].groupIndex = i + 1
+        }
+
+        try await libraryStore.saveGroups(allGroupsToSave)
+        print("[DIAGNOSTIC] Step 7: Saved \(allGroupsToSave.count) final GroupRecords (\(groupRecords.count) active, \(otherFolderGroups.count) preserved from other folders) to LibraryStore.")
+
+        // Sync matched faces and updated centroids/anchors back to central PersonRecords
+        for record in groupRecords {
+            if var person = await libraryStore.getPerson(byId: record.id) {
+                var updatedFaces = Set(person.confirmedFaceIds)
+                for fId in record.memberFaceIds {
+                    updatedFaces.insert(fId)
+                }
+                person.confirmedFaceIds = Array(updatedFaces)
+                if person.representativeFaceId == nil {
+                    person.representativeFaceId = record.representativeFaceId
+                }
+                if let newCentroid = record.centroid {
+                    person.centroidData = record.centroidData
+                    person.identityAnchorsData = record.identityAnchorsData
+                }
+                person.updatedAt = Date()
+                try? await libraryStore.savePerson(person)
+            }
+        }
 
         if enableDiagnostics {
             await logClusteringDiagnostics(

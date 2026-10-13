@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Modal sheet to select a target person when merging people.
+/// Modal sheet to select a target person when merging people, with side-by-side preview and explicit confirmation.
 struct MergePeopleSheet: View {
     let sourcePerson: PersonDisplayModel
     let candidatePeople: [PersonDisplayModel]
@@ -9,6 +9,7 @@ struct MergePeopleSheet: View {
 
     @State private var selectedTarget: PersonDisplayModel?
     @State private var searchQuery: String = ""
+    @State private var showConfirmAlert: Bool = false
 
     var filteredCandidates: [PersonDisplayModel] {
         let others = candidatePeople.filter { $0.id != sourcePerson.id }
@@ -42,11 +43,37 @@ struct MergePeopleSheet: View {
 
             Divider()
 
+            // Source Person Summary Banner
+            HStack(spacing: 12) {
+                FaceCropThumbnailView(
+                    faceId: sourcePerson.representativeFaceId ?? sourcePerson.id,
+                    photoURL: sourcePerson.representativePhotoURL,
+                    boundingBox: sourcePerson.representativeBoundingBox,
+                    size: 38,
+                    isCircular: true
+                )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Source: **\(sourcePerson.displayName)**")
+                        .font(.subheadline)
+                    Text("\(sourcePerson.uniquePhotoCount) photos • \(sourcePerson.faceCount) faces will be merged")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+
+            Divider()
+
             // Search Bar
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                TextField("Search people…", text: $searchQuery)
+                TextField("Search target person…", text: $searchQuery)
                     .textFieldStyle(.plain)
                 if !searchQuery.isEmpty {
                     Button(action: { searchQuery = "" }) {
@@ -56,10 +83,11 @@ struct MergePeopleSheet: View {
                     .buttonStyle(.plain)
                 }
             }
-            .padding(10)
+            .padding(8)
             .background(Color(nsColor: .controlBackgroundColor))
             .cornerRadius(8)
-            .padding(16)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
 
             // Candidate List
             if filteredCandidates.isEmpty {
@@ -124,6 +152,24 @@ struct MergePeopleSheet: View {
                 }
             }
 
+            // Preview Panel when target is selected
+            if let target = selectedTarget {
+                Divider()
+                HStack(spacing: 16) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Resulting Person Preview:")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                        Text("**\(target.displayName)** will retain **\(sourcePerson.faceCount + target.faceCount) faces**")
+                            .font(.caption)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(Color.accentColor.opacity(0.08))
+            }
+
             Divider()
 
             // Footer / Actions
@@ -134,11 +180,9 @@ struct MergePeopleSheet: View {
                 Spacer()
 
                 Button(action: {
-                    if let target = selectedTarget {
-                        onMerge(target)
-                    }
+                    showConfirmAlert = true
                 }) {
-                    Label("Merge People", systemImage: "arrow.triangle.merge")
+                    Label("Merge into Target", systemImage: "arrow.triangle.merge")
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(selectedTarget == nil)
@@ -147,6 +191,22 @@ struct MergePeopleSheet: View {
             .padding(16)
             .background(Color(nsColor: .windowBackgroundColor))
         }
-        .frame(width: 480, height: 460)
+        .frame(width: 500, height: 500)
+        .confirmationDialog(
+            "Confirm Identity Merge",
+            isPresented: $showConfirmAlert,
+            titleVisibility: .visible
+        ) {
+            Button("Merge and Deactivate Source", role: .destructive) {
+                if let target = selectedTarget {
+                    onMerge(target)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if let target = selectedTarget {
+                Text("Merge \"\(sourcePerson.displayName)\" into \"\(target.displayName)\"?\n\nAll \(sourcePerson.faceCount) confirmed faces will be unified under \(target.displayName). \"\(sourcePerson.displayName)\" will be removed as an independent person.")
+            }
+        }
     }
 }

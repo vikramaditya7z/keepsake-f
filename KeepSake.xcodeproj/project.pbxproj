@@ -51,6 +51,10 @@
 		A10000012A00000000000042 /* UserFacingError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000042 /* UserFacingError.swift */; };
 		A10000012A00000000000043 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000043 /* SettingsView.swift */; };
 		A10000012A00000000000044 /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000044 /* WelcomeView.swift */; };
+		A10000012A00000000000045 /* RecycleBinView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022A00000000000045 /* RecycleBinView.swift */; };
+		B10000012A00000000000046 /* AssignCandidateGroupSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000022A00000000000046 /* AssignCandidateGroupSheet.swift */; };
+		C10000012A00000000000047 /* DiskThumbnailCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000022A00000000000047 /* DiskThumbnailCache.swift */; };
+		C10000012A00000000000048 /* SuggestionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000022A00000000000048 /* SuggestionsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -111,6 +115,10 @@
 		A10000022A00000000000042 /* UserFacingError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserFacingError.swift; sourceTree = "<group>"; };
 		A10000022A00000000000043 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A10000022A00000000000044 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
+		A10000022A00000000000045 /* RecycleBinView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecycleBinView.swift; sourceTree = "<group>"; };
+		B10000022A00000000000046 /* AssignCandidateGroupSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssignCandidateGroupSheet.swift; sourceTree = "<group>"; };
+		C10000022A00000000000047 /* DiskThumbnailCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskThumbnailCache.swift; sourceTree = "<group>"; };
+		C10000022A00000000000048 /* SuggestionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -194,6 +202,7 @@
 				A10000022A00000000000036 /* FaceCropLoader.swift */,
 				A10000022A0000000000003F /* LibraryProcessingQueue.swift */,
 				A10000022A00000000000040 /* FolderMonitorService.swift */,
+				C10000022A00000000000047 /* DiskThumbnailCache.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -220,8 +229,17 @@
 				A10000022A00000000000043 /* SettingsView.swift */,
 				A10000022A00000000000044 /* WelcomeView.swift */,
 				A10000052A00000000000022 /* People */,
+				C10000052A00000000000048 /* Suggestions */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		C10000052A00000000000048 /* Suggestions */ = {
+			isa = PBXGroup;
+			children = (
+				C10000022A00000000000048 /* SuggestionsView.swift */,
+			);
+			path = Suggestions;
 			sourceTree = "<group>";
 		};
 		A10000052A00000000000022 /* People */ = {
@@ -234,6 +252,8 @@
 				A10000022A0000000000003C /* UnassignedFacesView.swift */,
 				A10000022A0000000000003D /* PersonDetailView.swift */,
 				A10000022A0000000000003E /* PeopleGalleryView.swift */,
+				A10000022A00000000000045 /* RecycleBinView.swift */,
+				B10000022A00000000000046 /* AssignCandidateGroupSheet.swift */,
 			);
 			path = People;
 			sourceTree = "<group>";
@@ -405,6 +425,10 @@
 				A10000012A00000000000042 /* UserFacingError.swift in Sources */,
 				A10000012A00000000000043 /* SettingsView.swift in Sources */,
 				A10000012A00000000000044 /* WelcomeView.swift in Sources */,
+				A10000012A00000000000045 /* RecycleBinView.swift in Sources */,
+				B10000012A00000000000046 /* AssignCandidateGroupSheet.swift in Sources */,
+				C10000012A00000000000047 /* DiskThumbnailCache.swift in Sources */,
+				C10000012A00000000000048 /* SuggestionsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -548,6 +572,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_OTHER_FLAGS = "--standalone-icon-behavior all";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -571,6 +596,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_OTHER_FLAGS = "--standalone-icon-behavior all";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;

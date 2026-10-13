@@ -4,6 +4,9 @@ import SwiftUI
 struct WelcomeView: View {
     let onChooseFolder: () -> Void
     let onDropFolderURL: ((URL) -> Void)?
+    var onNavigateToPeople: (() -> Void)? = nil
+    var pendingCandidateCount: Int = 0
+    var knownPeopleCount: Int = 0
 
     @State private var isTargetedForDrop: Bool = false
 
@@ -81,6 +84,25 @@ struct WelcomeView: View {
                 .shadow(color: Color.accentColor.opacity(0.2), radius: 6, y: 3)
                 .accessibilityLabel("Choose Photo Folder")
                 .accessibilityHint("Opens native macOS folder picker to select a photo directory")
+
+                if let onNavigateToPeople = onNavigateToPeople {
+                    if pendingCandidateCount > 0 {
+                        Button(action: onNavigateToPeople) {
+                            Label("Review \(pendingCandidateCount) Candidate \(pendingCandidateCount == 1 ? "Suggestion" : "Suggestions")", systemImage: "sparkles")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.orange)
+                        .controlSize(.regular)
+                    } else if knownPeopleCount > 0 {
+                        Button(action: onNavigateToPeople) {
+                            Label("View Known People (\(knownPeopleCount))", systemImage: "person.2.fill")
+                                .font(.subheadline)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
+                    }
+                }
 
                 Text("Or drag and drop a folder anywhere into this window")
                     .font(.caption)

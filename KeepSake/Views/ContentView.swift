@@ -3,6 +3,7 @@ import SwiftUI
 enum AppNavigationSection: String, CaseIterable, Identifiable {
     case photos = "Photos"
     case people = "People"
+    case suggestions = "Suggestions"
 
     var id: String { rawValue }
 }
@@ -14,6 +15,7 @@ struct ContentView: View {
 
     @State private var selectedSection: AppNavigationSection = .photos
     @State private var showClusteringLab: Bool = false
+    @State private var showSettingsSheet: Bool = false
 
     init(viewModel: PhotoBrowserViewModel? = nil) {
         self.viewModel = viewModel ?? PhotoBrowserViewModel()
@@ -33,54 +35,87 @@ struct ContentView: View {
 
             // Main Content Area
             ZStack {
-                if viewModel.selectedFolderURL == nil {
-                    WelcomeView(
-                        onChooseFolder: {
-                            viewModel.chooseFolder()
-                        },
-                        onDropFolderURL: { url in
-                            viewModel.openFolderDirectly(url: url)
+                switch selectedSection {
+                case .photos:
+                    if viewModel.selectedFolderURL == nil {
+                        WelcomeView(
+                            onChooseFolder: {
+                                viewModel.chooseFolder()
+                            },
+                            onDropFolderURL: { url in
+                                viewModel.openFolderDirectly(url: url)
+                            },
+                            onNavigateToPeople: {
+                                selectedSection = .people
+                            },
+                            pendingCandidateCount: peopleViewModel.candidateGroups.count,
+                            knownPeopleCount: peopleViewModel.people.count
+                        )
+                    } else if viewModel.photos.isEmpty && viewModel.isScanning {
+                        scanningView
+                    } else if viewModel.photos.isEmpty && !viewModel.isScanning {
+                        emptyFolderView
+                    } else {
+                        VStack(spacing: 0) {
+                            if !peopleViewModel.candidateGroups.isEmpty {
+                                candidateSuggestionsPhotosBanner
+                            }
+
+                            PhotoGridView(photos: viewModel.sortedPhotos) { photo in
+                                viewModel.selectPhoto(photo)
+                            }
                         }
-                    )
-                } else if selectedSection == .people {
+                    }
+
+                    // Modal Photo Detail Viewer (Photos tab)
+                    if let selectedPhoto = viewModel.selectedPhoto {
+                        PhotoDetailView(
+                            photo: selectedPhoto,
+                            onDismiss: {
+                                viewModel.clearSelection()
+                            },
+                            onPrevious: {
+                                viewModel.selectPreviousPhoto()
+                            },
+                            onNext: {
+                                viewModel.selectNextPhoto()
+                            },
+                            hasPrevious: viewModel.hasPreviousPhoto,
+                            hasNext: viewModel.hasNextPhoto
+                        )
+                        .transition(.opacity)
+                    }
+
+                case .people:
                     PeopleGalleryView(
                         viewModel: peopleViewModel,
                         rootFolderURL: viewModel.selectedFolderURL,
                         onOpenClusteringLab: {
                             showClusteringLab = true
+                        },
+                        onChooseFolder: {
+                            viewModel.chooseFolder()
                         }
                     )
-                } else if viewModel.photos.isEmpty && viewModel.isScanning {
-                    scanningView
-                } else if viewModel.photos.isEmpty && !viewModel.isScanning {
-                    emptyFolderView
-                } else {
-                    PhotoGridView(photos: viewModel.sortedPhotos) { photo in
-                        viewModel.selectPhoto(photo)
-                    }
-                }
 
-                // Modal Photo Detail Viewer (Photos tab)
-                if selectedSection == .photos, let selectedPhoto = viewModel.selectedPhoto {
-                    PhotoDetailView(
-                        photo: selectedPhoto,
-                        onDismiss: {
-                            viewModel.clearSelection()
-                        },
-                        onPrevious: {
-                            viewModel.selectPreviousPhoto()
-                        },
-                        onNext: {
-                            viewModel.selectNextPhoto()
-                        },
-                        hasPrevious: viewModel.hasPreviousPhoto,
-                        hasNext: viewModel.hasNextPhoto
+                case .suggestions:
+                    SuggestionsView(
+                        viewModel: peopleViewModel,
+                        rootFolderURL: viewModel.selectedFolderURL,
+                        onChooseFolder: {
+                            viewModel.chooseFolder()
+                        }
                     )
-                    .transition(.opacity)
                 }
             }
         }
         .frame(minWidth: 720, minHeight: 520)
+        .sheet(isPresented: $showSettingsSheet) {
+            SettingsView(
+                browserViewModel: viewModel,
+                peopleViewModel: peopleViewModel
+            )
+        }
         .sheet(isPresented: $showClusteringLab, onDismiss: {
             Task {
                 await peopleViewModel.loadData(rootFolderURL: viewModel.selectedFolderURL)
@@ -94,6 +129,9 @@ struct ContentView: View {
             )
         }
         .onAppear {
+            Task {
+                await peopleViewModel.loadData(rootFolderURL: viewModel.selectedFolderURL)
+            }
             viewModel.onProcessingCompleted = {
                 Task { @MainActor in
                     await peopleViewModel.loadData(rootFolderURL: viewModel.selectedFolderURL)
@@ -101,7 +139,7 @@ struct ContentView: View {
             }
         }
         .onChange(of: selectedSection) { _, newSection in
-            if newSection == .people {
+            if newSection == .people || newSection == .suggestions {
                 Task {
                     await peopleViewModel.loadData(rootFolderURL: viewModel.selectedFolderURL)
                 }
@@ -133,6 +171,7 @@ struct ContentView: View {
 
     private var headerBar: some View {
         HStack(spacing: 12) {
+            // Leading: Selected folder info or App branding
             if let folderURL = viewModel.selectedFolderURL {
                 Image(systemName: "folder.fill")
                     .foregroundStyle(.tint)
@@ -153,20 +192,43 @@ struct ContentView: View {
                 .help(folderURL.path)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("Selected folder: \(folderURL.lastPathComponent)")
+            } else {
+                HStack(spacing: 8) {
+                    Image(systemName: "photo.stack.fill")
+                        .foregroundStyle(.tint)
+                    Text("Keepsake")
+                        .font(.headline)
+                }
+            }
 
-                Spacer()
+            Spacer()
 
-                // Section Switcher (Photos / People)
+            // Center: Persistent Section Switcher (Photos / People / Suggestions)
+            HStack(spacing: 8) {
                 Picker("Section", selection: $selectedSection) {
                     Label("Photos", systemImage: "photo.stack").tag(AppNavigationSection.photos)
                     Label("People", systemImage: "person.2.fill").tag(AppNavigationSection.people)
+                    Label("Suggestions", systemImage: "sparkles").tag(AppNavigationSection.suggestions)
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 200)
+                .frame(width: 280)
                 .accessibilityLabel("Navigation section")
+                .overlay(alignment: .topTrailing) {
+                    if !peopleViewModel.candidateGroups.isEmpty {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 7, height: 7)
+                            .offset(x: -6, y: 3)
+                            .allowsHitTesting(false)
+                            .help("\(peopleViewModel.candidateGroups.count) candidate face suggestions awaiting review")
+                    }
+                }
+            }
 
-                Spacer()
+            Spacer()
 
+            // Trailing: Controls & Actions
+            if viewModel.selectedFolderURL != nil {
                 if viewModel.isScanning || viewModel.isReconciling {
                     HStack(spacing: 8) {
                         ProgressView()
@@ -220,8 +282,8 @@ struct ContentView: View {
                 }
                 .buttonStyle(.bordered)
                 .keyboardShortcut("r", modifiers: .command)
-                .help("Rescan library now (⌘R)")
-                .accessibilityLabel("Rescan library")
+                .help("Rescan active folder for new photos (⌘R)")
+                .accessibilityLabel("Rescan active folder for new photos")
 
                 Button(action: {
                     viewModel.chooseFolder()
@@ -231,15 +293,6 @@ struct ContentView: View {
                 .keyboardShortcut("o", modifiers: .command)
                 .accessibilityLabel("Choose another folder")
             } else {
-                HStack(spacing: 8) {
-                    Image(systemName: "photo.stack.fill")
-                        .foregroundStyle(.tint)
-                    Text("Keepsake")
-                        .font(.headline)
-                }
-
-                Spacer()
-
                 Button(action: {
                     viewModel.chooseFolder()
                 }) {
@@ -248,10 +301,49 @@ struct ContentView: View {
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut("o", modifiers: .command)
             }
+
+            // Settings Hub Button
+            Button(action: {
+                showSettingsSheet = true
+            }) {
+                Image(systemName: "gearshape")
+            }
+            .buttonStyle(.bordered)
+            .keyboardShortcut(",", modifiers: .command)
+            .help("Open Settings & Management Hub (⌘,)")
+            .accessibilityLabel("Open Settings & Management Hub")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    // MARK: - Suggestions Banner for Photos View
+
+    private var candidateSuggestionsPhotosBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "sparkles")
+                .foregroundStyle(Color.accentColor)
+
+            Text("\(peopleViewModel.candidateGroups.count) candidate face \(peopleViewModel.candidateGroups.count == 1 ? "group suggestion is" : "group suggestions are") ready for review.")
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+
+            Spacer()
+
+            Button(action: {
+                selectedSection = .suggestions
+            }) {
+                Label("Review Suggestions", systemImage: "arrow.right.circle.fill")
+                    .font(.caption.bold())
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Color.accentColor.opacity(0.12))
+        .overlay(Divider(), alignment: .bottom)
     }
 
     // MARK: - Monitoring & Library Status Bar (Phases 7, 8 & 9)
@@ -341,6 +433,15 @@ struct ContentView: View {
                         .help("Cancel indexing")
                         .accessibilityLabel("Cancel indexing")
                     }
+                } else if viewModel.selectedFolderURL == nil {
+                    HStack(spacing: 6) {
+                        Image(systemName: "folder")
+                            .foregroundStyle(.secondary)
+                            .font(.caption2)
+                        Text("No folder selected")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 } else {
                     HStack(spacing: 6) {
                         Image(systemName: "photo.stack")
@@ -352,7 +453,7 @@ struct ContentView: View {
                         Text("•")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
-                        Text("\(viewModel.totalStoredGroups) \(viewModel.totalStoredGroups == 1 ? "person" : "people")")
+                        Text("\(peopleViewModel.activeFolderPeopleCount) \(peopleViewModel.activeFolderPeopleCount == 1 ? "person" : "people")")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }

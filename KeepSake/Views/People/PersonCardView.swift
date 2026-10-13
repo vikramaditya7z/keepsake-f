@@ -14,7 +14,7 @@ struct PersonCardView: View {
         Button(action: onClick) {
             VStack(spacing: 12) {
                 // Face Avatar
-                ZStack {
+                ZStack(alignment: .topTrailing) {
                     FaceCropThumbnailView(
                         faceId: person.representativeFaceId ?? person.id,
                         photoURL: person.representativePhotoURL,
@@ -27,6 +27,8 @@ struct PersonCardView: View {
                             .stroke(isHovered ? Color.accentColor : Color(nsColor: .separatorColor), lineWidth: isHovered ? 2.5 : 1)
                     )
                     .shadow(color: .black.opacity(isHovered ? 0.2 : 0.08), radius: isHovered ? 8 : 4, x: 0, y: 2)
+
+
                 }
 
                 // Name & Counts

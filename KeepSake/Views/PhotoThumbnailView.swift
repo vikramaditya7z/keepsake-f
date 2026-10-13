@@ -5,8 +5,16 @@ struct PhotoThumbnailView: View {
     let onSelect: () -> Void
 
     @State private var thumbnail: NSImage?
-    @State private var isLoading: Bool = true
+    @State private var isLoading: Bool
     @State private var isHovered: Bool = false
+
+    init(photo: PhotoItem, onSelect: @escaping () -> Void) {
+        self.photo = photo
+        self.onSelect = onSelect
+        let cached = ThumbnailLoader.shared.cachedImage(for: photo.url)
+        _thumbnail = State(initialValue: cached)
+        _isLoading = State(initialValue: cached == nil)
+    }
 
     var body: some View {
         Button(action: onSelect) {
@@ -49,10 +57,17 @@ struct PhotoThumbnailView: View {
             }
         }
         .task(id: photo.url) {
-            isLoading = true
-            let image = await ThumbnailLoader.shared.loadThumbnail(for: photo.url)
-            self.thumbnail = image
-            self.isLoading = false
+            if thumbnail == nil {
+                if let fastCached = ThumbnailLoader.shared.cachedImage(for: photo.url) {
+                    self.thumbnail = fastCached
+                    self.isLoading = false
+                    return
+                }
+                isLoading = true
+                let image = await ThumbnailLoader.shared.loadThumbnail(for: photo.url)
+                self.thumbnail = image
+                self.isLoading = false
+            }
         }
         .help("\(photo.filename) (\(photo.formattedFileSize))")
     }

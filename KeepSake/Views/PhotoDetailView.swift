@@ -1,6 +1,46 @@
 import SwiftUI
 import AppKit
 
+enum PhotoFinderError: LocalizedError, Equatable {
+    case invalidURL(String)
+    case fileNotFound(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidURL(let name):
+            return "Cannot resolve a valid file path for \"\(name)\"."
+        case .fileNotFound(let path):
+            return "The photo file could not be found at:\n\(path)"
+        }
+    }
+}
+
+enum PhotoFinderHelper {
+    static func resolveAndValidateFileURL(for photo: PhotoItem, fileManager: FileManager = .default) -> Result<URL, PhotoFinderError> {
+        let fileURL = photo.url.standardizedFileURL
+        guard fileURL.isFileURL, !fileURL.path.isEmpty else {
+            return .failure(.invalidURL(photo.filename))
+        }
+        guard fileManager.fileExists(atPath: fileURL.path) else {
+            return .failure(.fileNotFound(fileURL.path))
+        }
+        return .success(fileURL)
+    }
+
+    @discardableResult
+    static func revealInFinder(for photo: PhotoItem, fileManager: FileManager = .default, opener: (([URL]) -> Void)? = nil) -> Result<URL, PhotoFinderError> {
+        let result = resolveAndValidateFileURL(for: photo, fileManager: fileManager)
+        if case .success(let fileURL) = result {
+            if let opener = opener {
+                opener([fileURL])
+            } else {
+                NSWorkspace.shared.activateFileViewerSelecting([fileURL])
+            }
+        }
+        return result
+    }
+}
+
 struct PhotoDetailView: View {
     let photo: PhotoItem
     let onDismiss: () -> Void
@@ -17,6 +57,8 @@ struct PhotoDetailView: View {
     @State private var isDetectingFaces: Bool = false
     @State private var showFaceOverlay: Bool = AppSettings.shared.showFaceOverlaysByDefault
     @State private var showRecognitionLab: Bool = false
+    @State private var errorMessage: String?
+    @State private var showErrorAlert: Bool = false
 
     private let faceDetector: any FaceDetectionServiceProtocol = VisionFaceDetectionService()
 
@@ -105,6 +147,13 @@ struct PhotoDetailView: View {
                 }
             )
         }
+        .alert("Unable to Show in Finder", isPresented: $showErrorAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            if let msg = errorMessage {
+                Text(msg)
+            }
+        }
     }
 
     // MARK: - Top Toolbar
@@ -189,10 +238,23 @@ struct PhotoDetailView: View {
             }
             .padding(.trailing, 16)
 
+            // Show in Finder
+            Button(action: revealInFinder) {
+                Image(systemName: "folder")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .frame(width: 28, height: 28)
+                    .background(Circle().fill(Color.white.opacity(0.12)))
+            }
+            .buttonStyle(.plain)
+            .help("Show in Finder")
+            .accessibilityLabel("Show in Finder")
+            .padding(.trailing, 10)
+
             Button(action: onDismiss) {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 24))
-                    .foregroundStyle(.white.opacity(0.8))
+                .font(.system(size: 24))
+                .foregroundStyle(.white.opacity(0.8))
             }
             .buttonStyle(.plain)
             .keyboardShortcut(.cancelAction)
@@ -265,5 +327,15 @@ struct PhotoDetailView: View {
             self.detectedFaces = []
         }
         self.isDetectingFaces = false
+    }
+
+    // MARK: - Finder Integration
+
+    private func revealInFinder() {
+        let result = PhotoFinderHelper.revealInFinder(for: photo)
+        if case .failure(let error) = result {
+            errorMessage = error.localizedDescription
+            showErrorAlert = true
+        }
     }
 }

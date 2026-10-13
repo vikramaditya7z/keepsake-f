@@ -1,12 +1,12 @@
 import SwiftUI
 
-/// Main gallery view displaying all recognized person groups and unassigned faces.
+/// Main gallery view displaying all confirmed recognized people.
 struct PeopleGalleryView: View {
     @ObservedObject var viewModel: PeopleViewModel
     let rootFolderURL: URL?
     let onOpenClusteringLab: () -> Void
+    var onChooseFolder: (() -> Void)? = nil
 
-    @State private var showUnassignedSheet: Bool = false
     @State private var searchQuery: String = ""
 
     private let columns = [
@@ -14,10 +14,14 @@ struct PeopleGalleryView: View {
     ]
 
     var filteredPeople: [PersonDisplayModel] {
+        let basePeople = rootFolderURL != nil
+            ? viewModel.people.filter { $0.faceCount > 0 || $0.uniquePhotoCount > 0 }
+            : viewModel.people
+
         if searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return viewModel.people
+            return basePeople
         }
-        return viewModel.people.filter { $0.displayName.localizedCaseInsensitiveContains(searchQuery) }
+        return basePeople.filter { $0.displayName.localizedCaseInsensitiveContains(searchQuery) }
     }
 
     var body: some View {
@@ -40,6 +44,8 @@ struct PeopleGalleryView: View {
                     // Gallery Content
                     if viewModel.people.isEmpty {
                         emptyStateView
+                    } else if filteredPeople.isEmpty {
+                        noSearchResultsView
                     } else {
                         mainGalleryScroll
                     }
@@ -54,18 +60,6 @@ struct PeopleGalleryView: View {
             Task {
                 await viewModel.loadData(rootFolderURL: rootFolderURL)
             }
-        }
-        .sheet(isPresented: $showUnassignedSheet) {
-            UnassignedFacesView(
-                unassignedFaces: viewModel.unassignedFaces,
-                onAssignFace: { face in
-                    showUnassignedSheet = false
-                    viewModel.promptAssign(for: face)
-                },
-                onDismiss: {
-                    showUnassignedSheet = false
-                }
-            )
         }
         .sheet(isPresented: $viewModel.showMergeSheet) {
             if let source = viewModel.personToMerge {
@@ -149,20 +143,8 @@ struct PeopleGalleryView: View {
 
             Spacer()
 
-            // Unassigned Faces Badge/Button
-            if !viewModel.unassignedFaces.isEmpty {
-                Button(action: {
-                    showUnassignedSheet = true
-                }) {
-                    Label("\(viewModel.unassignedFaces.count) Unassigned Faces", systemImage: "person.crop.circle.badge.questionmark")
-                        .font(.caption)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-
             // People Count
-            Text("\(viewModel.people.count) \(viewModel.people.count == 1 ? "person" : "people")")
+            Text("\(filteredPeople.count) \(filteredPeople.count == 1 ? "person" : "people")")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -197,35 +179,54 @@ struct PeopleGalleryView: View {
         }
     }
 
+    // MARK: - No Search Results
+
+    private var noSearchResultsView: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 40))
+                .foregroundStyle(.secondary)
+
+            Text("No people matching \"\(searchQuery)\"")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+            Button("Clear Search") {
+                searchQuery = ""
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(40)
+    }
+
     @ObservedObject private var settings = AppSettings.shared
 
     // MARK: - Empty State View
 
     private var emptyStateView: some View {
         VStack(spacing: 20) {
-            Image(systemName: "person.3.fill")
+            Image(systemName: "person.2.slash")
                 .font(.system(size: 56))
                 .foregroundStyle(.secondary.opacity(0.6))
                 .accessibilityHidden(true)
 
             VStack(spacing: 8) {
-                Text("No People Discovered Yet")
+                Text("No Confirmed People Yet")
                     .font(.title2)
                     .fontWeight(.bold)
 
-                Text("Keepsake automatically discovers people as it scans and indexes faces in your photo library.")
+                Text("Keepsake discovers identities as faces are scanned and indexed. Review candidate suggestions in the Suggestions tab to confirm and name people.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                    .frame(maxWidth: 400)
+                    .frame(maxWidth: 420)
             }
 
-            if !viewModel.unassignedFaces.isEmpty {
-                Button(action: {
-                    showUnassignedSheet = true
-                }) {
-                    Label("View \(viewModel.unassignedFaces.count) Unassigned Faces", systemImage: "person.crop.circle.badge.plus")
-                        .font(.headline)
+            if let onChooseFolder = onChooseFolder, rootFolderURL == nil {
+                Button(action: onChooseFolder) {
+                    Label("Choose Photo Folder to Scan…", systemImage: "folder.badge.plus")
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
@@ -235,7 +236,6 @@ struct PeopleGalleryView: View {
             if settings.developerModeEnabled {
                 Button(action: onOpenClusteringLab) {
                     Label("Open Clustering Lab (Developer)", systemImage: "person.3.sequence.fill")
-                        .font(.subheadline)
                 }
                 .buttonStyle(.bordered)
                 .tint(.indigo)
@@ -244,5 +244,115 @@ struct PeopleGalleryView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(40)
+    }
+}
+
+/// Visual card for reviewing a candidate face group suggestion.
+struct CandidateReviewCardView: View {
+    let candidate: PersonDisplayModel
+    let onConfirm: () -> Void
+    let onAssign: () -> Void
+    let onReject: () -> Void
+    let onClick: () -> Void
+
+    @State private var isHovered: Bool = false
+
+    var body: some View {
+        VStack(spacing: 12) {
+            // Face Avatar
+            ZStack {
+                FaceCropThumbnailView(
+                    faceId: candidate.representativeFaceId ?? candidate.id,
+                    photoURL: candidate.representativePhotoURL,
+                    boundingBox: candidate.representativeBoundingBox,
+                    size: 90,
+                    isCircular: true
+                )
+                .overlay(
+                    Circle()
+                        .stroke(Color.accentColor.opacity(0.8), style: StrokeStyle(lineWidth: 2, dash: [4, 3]))
+                )
+                .shadow(color: .black.opacity(isHovered ? 0.18 : 0.08), radius: isHovered ? 6 : 3, x: 0, y: 2)
+            }
+
+            // Title & Counts
+            VStack(spacing: 3) {
+                Text(candidate.displayName)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+
+                HStack(spacing: 4) {
+                    Text("\(candidate.faceCount) \(candidate.faceCount == 1 ? "face" : "faces")")
+                    Text("•")
+                    Text("\(candidate.uniquePhotoCount) \(candidate.uniquePhotoCount == 1 ? "photo" : "photos")")
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+
+            // Action Buttons
+            HStack(spacing: 6) {
+                Button(action: onConfirm) {
+                    Label("Confirm", systemImage: "checkmark")
+                        .font(.caption.bold())
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+
+                Button(action: onAssign) {
+                    Image(systemName: "person.crop.circle.badge.plus")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("Assign to existing confirmed person")
+
+                Button(action: onReject) {
+                    Image(systemName: "xmark")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("Reject suggestion")
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .padding(.horizontal, 10)
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .onTapGesture {
+            onClick()
+        }
+        .contextMenu {
+            Button {
+                onConfirm()
+            } label: {
+                Label("Confirm Suggestion…", systemImage: "checkmark")
+            }
+
+            Button {
+                onAssign()
+            } label: {
+                Label("Assign to Existing Person…", systemImage: "person.crop.circle.badge.plus")
+            }
+
+            Button(role: .destructive) {
+                onReject()
+            } label: {
+                Label("Reject Suggestion", systemImage: "xmark")
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(isHovered ? Color(nsColor: .selectedControlColor).opacity(0.12) : Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(isHovered ? Color.accentColor : Color.accentColor.opacity(0.25), lineWidth: 1)
+        )
+        .onHover { hovering in
+            isHovered = hovering
+        }
     }
 }

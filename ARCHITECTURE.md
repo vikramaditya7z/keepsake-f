@@ -360,4 +360,182 @@ In accordance with Apple Human Interface Guidelines (HIG), raw system errors (`C
 - **No Cloud Services or Network Calls**: 100% local persistence in `Application Support/KeepSake`; zero telemetry, zero analytics, zero external API calls.
 - **Non-Destructive Filesystem Operations**: Original user photo files are never modified, moved, renamed, or tagged on disk.
 
+---
+
+## 13. Identity Corrections, Bulk Assignment & Cannot-Link Architecture (Milestone V7)
+
+### Folder Scoping of Pending Review Queues
+- **Candidate Suggestions**: Candidate groups produced by `LibraryProcessingCoordinator` are tagged with `rootFolderPath: rootFolderURL.standardizedFileURL.path`. Only suggestions belonging to the currently selected folder are displayed for review. Switching to a different folder preserves suggestions from other folders in the snapshot without surfacing them in the active UI.
+- **Unassigned Faces**: `LibraryStore.getUngroupedFaces(forRootFolderPath:)` filters detected faces by matching `photo.rootFolderPath` against the active folder path. Faces belonging to confirmed people (`PersonRecord`) or active groups are excluded. This guarantees that empty folders show 0 unassigned faces and 0 pending suggestions.
+
+### Multi-Select & Bulk Assignment State Machine
+- `UnassignedFacesView` provides a multi-select mode (`isSelectingUnassigned`) with "Select All" and "Deselect All" controls.
+- Users can assign selected faces in bulk to an existing confirmed person (`bulkAssignFaces`) or create a new person (`bulkCreatePerson`).
+- Selection count and conflict status are updated reactively on the main actor.
+
+### Cannot-Link Constraint Enforcement
+- **Ontological Ground Rule**: A single physical human cannot appear multiple times as distinct faces in the same photograph.
+- **Service Enforcement**: `IdentityService` checks that:
+  $$\text{count}(\text{selectedFaceIds}) == \text{count}(\text{distinctPhotoIds})$$
+  and that none of the candidate photos already have confirmed faces associated with the target person.
+- **Violation Handling**: If violated, `IdentityService` throws `IdentityServiceError.cannotLinkViolation`. In the UI, an inline warning banner appears and disables the assignment action buttons, preventing invalid assignments proactively.
+
+### Granular Pre- and Post-Confirmation Face Removal
+- **Pre-Confirmation**: Users can remove an individual face from a candidate suggestion card before confirming it (`removeFaceFromCandidateGroup`). The removed face is released back to the unassigned queue without rejecting the remaining suggestion.
+- **Post-Confirmation**: Users can remove an individual face from a confirmed person (`removeFaceFromPerson`) or move it to another person (`moveFace`), which recalculates anchor embeddings and updates centroids while enforcing Cannot-Link constraints.
+
+### Authoritative Person Merging
+- Merging duplicate people (`mergePeople`) merges face memberships into the target person record, invalidates conflicting co-occurring merges via Cannot-Link validation, and deactivates the source person record in the central store.
+- `MergePeopleSheet` presents a side-by-side comparison of source vs target face counts and photo counts before user confirmation.
+
+---
+
+## 14. False Face Detection, Exclusion Lifecycle & Review-State Preservation (Milestone V7 Remediation)
+
+### False Face Detection Lifecycle ("Not a Face")
+- **Ontological Reality**: Computer-vision face detectors occasionally hallucinate face bounding boxes on shoes, clothing patterns, tree branches, or artwork. KeepSake treats false face detection as a primary domain state rather than an error or photo deletion.
+- **Data Model Schema**:
+  - `FaceRecord` contains `isExcluded: Bool`, `excludedAt: Date?`, and `exclusionReason: String?`.
+  - `LibraryIndexSnapshot` maintains an authoritative index `excludedFaceIds: Set<UUID>`.
+  - Backward compatibility: previous library snapshots missing these fields default safely to `isExcluded = false`, `excludedAt = nil`, `exclusionReason = nil`.
+- **Absolute Preservation of User Photos**:
+  - Marking a face detection as "Not a Face" or permanently deleting it from the Recycle Bin **never modifies or deletes the original photograph** on disk.
+  - Only the metadata reference (`FaceRecord`) and associated embedding in the index are altered or pruned.
+- **Rescan Re-detection Suppression**:
+  - During folder rescans, `LibraryProcessingCoordinator.processSinglePhoto` matches newly detected bounding boxes against previously excluded face records on the same photo.
+  - If a bounding box center distance satisfies $\|(x_1, y_1) - (x_2, y_2)\|_2 < 0.05$, the face record is immediately marked `isExcluded = true`, and ArcFace embedding extraction is skipped entirely. This prevents hallucinated bounding boxes from reappearing after folder re-indexing.
+
+### Recycle Bin Management
+- **Dedicated Inspection Surface (`RecycleBinView`)**:
+  - Accessible via the "Excluded (Recycle Bin)" button in the People gallery sub-header and empty-state views.
+  - Displays photo thumbnails, filenames, relative paths, and exclusion reasons.
+- **Action Semantics**:
+  - **Restore**: Clears `isExcluded`, resets `exclusionReason`, and immediately returns the face to the Unassigned Faces queue for identification or assignment.
+  - **Delete Permanently**: Removes the `FaceRecord` and its vector embedding from `LibraryStore` completely with an explicit confirmation dialog.
+  - **Bulk Actions**: Provides "Restore All" and "Empty Bin" capabilities.
+
+### Strict Folder Isolation for Review Queues
+- **Scoping Invariant**:
+  - When switching folders, candidate suggestions and unassigned faces displayed in the UI must strictly originate from photographs within the active folder hierarchy.
+  - `LibraryStore.getCandidateGroups(forRootFolderPath:)`, `getGroups(forRootFolderPath:)`, and `getUngroupedFaces(forRootFolderPath:)` filter records by matching `photo.rootFolderPath == activeFolder.path`.
+  - If the active folder contains zero photos, the review queue displays zero suggestions and zero unassigned faces, without leaking detections from previous folders.
+- **Scoped Reclustering**:
+  - `LibraryProcessingCoordinator.reclusterLibrary` scopes clustering inputs strictly to photos and embeddings belonging to the active folder.
+  - Reclustering an active folder preserves candidate groups belonging to other folders in the persistent snapshot.
+  - If an active folder is empty or contains zero valid embeddings, candidate groups for that specific folder are cleaned up while preserving all confirmed identities and cross-folder data.
+
+### Rejection State Persistence & Clustering Idempotence
+- **Persistence Across Rescans**:
+  - Rejecting a candidate suggestion marks its cluster with `reviewStatus = .rejected`.
+  - Agglomerative clustering in `reclusterLibrary` tracks `isRejected` state across cluster unions and assigns `reviewStatus = .rejected` to candidate groups containing rejected clusters.
+  - Existing unassigned rejected groups are preserved during snapshot updates and are never reincarnated as `.candidateSuggestion`.
+  - Faces from rejected suggestions remain in the Unassigned Face pool, allowing user-driven assignment or "Not a Face" exclusion without recurring review banner clutter.
+
+### Streamlined Candidate Card Interaction
+- Redundant "Review" buttons have been removed from candidate suggestion cards in `CandidateReviewCardView`.
+- Clicking anywhere on the suggestion card body directly navigates to the candidate detail view.
+- "Confirm" and "Reject" buttons remain independent, prominent single-click actions for high-efficiency review workflows.
+
+---
+
+## 15. Global Identity Library, Cross-Folder Photos & Two-Category Recycle Bin (Milestone V7 Follow-up)
+
+### Global Identity Library & Cross-Folder Aggregation
+- **Global Person Identity vs. Scoped Photos**:
+  - The central People Database (`PersonRecord`) represents real-world physical humans whose identities exist globally across all indexed folders.
+  - The main Photos gallery remains strictly scoped to the currently active folder.
+  - In contrast, opening a person card in the People Gallery displays all photographs featuring that person across **all indexed folders**, with individual source folder metadata.
+- **Cross-Folder URL Resolution**:
+  - `LibraryStore.getPhotos(forGroup:)` resolves face associations from `snapshot.people` first to ensure multi-folder member faces are included.
+  - Image paths resolve against each photo's respective `photo.rootFolderPath`, ensuring cross-folder thumbnail rendering remains fully intact even when viewing people from an inactive folder.
+
+### Direct Candidate Group Assignment to Existing People
+- **Elimination of Temporary Identities**:
+  - Users can assign an entire candidate suggestion group or individual candidate face directly to an existing confirmed person without creating a temporary identity.
+  - Accessible via "Assign to Person…" on `CandidateReviewCardView` and the candidate detail review banner.
+  - `AssignCandidateGroupSheet` provides searchable selection of confirmed people with avatars, face counts, and photo counts.
+- **Pre-Confirmation Face Pruning**:
+  - Candidate groups containing faces of different people can be edited before confirmation: users can remove mismatched faces (returning them to unassigned) or mark them as "Not a Face".
+  - Candidate suggestions update dynamically; once approved or assigned, the suggestion is atomically removed from the review queue.
+
+### Distinct Post-Confirmation Face Actions
+- In `PersonDetailView`, face cards provide explicit, differentiated operations:
+  1. **Unassign Face**: Removes the association, returning the face to the Unassigned Faces queue.
+  2. **Move to Recycle Bin**: Moves the association to the "Removed from People" recovery tab with a saved `RemovedFaceAssociationRecord`.
+  3. **Move to Another Person**: Reassigns the face to a different confirmed person, enforcing Cannot-Link constraints.
+  4. **Not a Face**: Marks the face as a false detection (`isExcluded = true`), moving it to the "False Detections" tab.
+
+### Two-Category Recycle Bin Architecture
+- **Categorical Separation (`RecycleBinView`)**:
+  - **Tab 1: False Detections**: Manages hallucinated non-face detections (`isExcluded: true`). Actions: Restore (to Unassigned Faces), Delete Permanently (prunes face record from index).
+  - **Tab 2: Removed from People**: Manages removed person-face associations (`RemovedFaceAssociationRecord`). Actions: Restore to Person (restores association if person exists and Cannot-Link is satisfied), Restore to Unassigned (releases to unassigned pool), Delete Permanently.
+- **Immutability of Photos on Disk**:
+  - Both tabs enforce the core guarantee: original photographs on the user's filesystem are never deleted, renamed, or modified.
+
+---
+
+## 16. Folder-Scoped Photos, Global Identity Memory & UI De-duplication (V7 Critical Correction)
+
+### Global Identity Database vs. Folder-Scoped Photo Experience
+- **Architectural Separation**:
+  - **Global Identity Memory**: Physical human identities (`PersonRecord`) persist globally with their stable UUIDs, names, 512-D centroids, and anchor embeddings across all indexed folders. When a new folder is scanned, faces are compared against these global identities, allowing recognized individuals to be auto-matched or proposed as candidate matches without re-creating identity profiles.
+  - **Folder-Scoped Photo Presentation**: All visual displays of photos, photo counts, face counts, and key thumbnails are strictly scoped to the active folder (`rootFolderURL`).
+  - **Card Metrics & Empty Folders**: In People Gallery, a person with 0 photos in the active folder displays `0 photos` and `0 faces`, with a nil current-folder thumbnail. In an empty folder (Folder C), no photos from Folder A or B are displayed, while global identities remain safe in the persistent store.
+  - **Detail View Scoping**: When opening a person card, the gallery and face list are scoped to photos from the active folder. Cross-folder photos are not aggregated into the active gallery.
+
+### Principled Legacy `rootFolderPath == nil` Fallback Semantics
+- Centralized `isPhoto(_:matchingNormalizedRoot:)` helper resolves photo ownership:
+  1. **Explicit Root**: If `photo.rootFolderPath` is non-nil, strict path equality against `normalizedRoot` is enforced. Photos with explicit root folders never leak across folder boundaries.
+  2. **Relative Path Prefix**: If `photo.relativePath` has a prefix matching `normalizedRoot`, ownership is attributed to that folder.
+  3. **Metadata Alignment**: If `snapshot.metadata?.folderPath` matches `normalizedRoot`, legacy records indexed under that folder are preserved.
+  4. **Single-Folder Fallback**: If the store contains no photos with explicit roots for other folders (`!hasOtherExplicitFolders`), legacy/synthetic test records without `rootFolderPath` safely match the query.
+  5. **Conservative Multi-Folder Isolation**: If multiple folders exist in the store and a record has `rootFolderPath == nil` with no metadata alignment, it is treated conservatively and not leaked into foreign folders.
+
+### Complete Remove Person Lifecycle
+- **Authoritative Unlinking**:
+  - `LibraryStore.deletePerson(byId:)` safely handles identities existing in `snapshot.people`, `snapshot.groups`, or both.
+  - All confirmed member faces are collected and released back to the unassigned face pool.
+  - The person is deleted from `snapshot.people` and `snapshot.groups`.
+  - Empty groups are pruned, removed associations belonging to the person are purged, and the index is persisted atomically to disk.
+  - Removal is permanent and does not resurrect on reload, rescan, or application restart.
+- **Cancellation**:
+  - Dismissing or canceling the confirmation dialog performs zero modifications to the store or view model.
+
+### UI Action De-Duplication
+- **Single Authoritative Candidate Action Bar**:
+  - Duplicate `Confirm…`, `Assign to Person…`, and `Reject` buttons were removed from `PersonDetailView.topNavBar`.
+  - The single authoritative set of candidate actions resides exclusively in `candidateReviewBanner`.
+  - Individual face-level corrections ("Remove from Suggestion", "Assign to Person…", "Not a Face") remain on individual face cards.
+
+---
+
+## 17. Navigation Redesign, Unified Settings Hub & Two-Level Thumbnail Caching
+
+### Three-Pillar Primary Navigation
+- **Workspace Separation**:
+  - Top-level navigation is organized into three primary, independent sections: `Photos`, `People`, and `Suggestions`.
+  - **Photos**: Focused entirely on photo browsing within the active folder. Displays active folder name/path, total photo count, scanning/syncing state, sort order selector, rescan button, folder picker, and the modal full-screen photo detail viewer with "Show in Finder".
+  - **People**: Dedicated exclusively to confirmed people identities (`viewModel.people`). Features live search filtering, grid layout, customizable cover images with gold star indicators, and person detail drill-down. The candidate suggestion queue has been completely extracted out of People to prevent scrolling past suggestions to reach confirmed people.
+  - **Suggestions**: Dedicated review workspace for candidate face clusters (`viewModel.candidateGroups`). Features candidate review cards, one-click confirmation (with name entry dialog), direct assignment to existing people (`AssignCandidateGroupSheet`), and rejection. Navigation picker dynamically reflects pending suggestion count with a high-visibility badge.
+
+### Unified Native macOS Settings Hub
+- **Centralized Architecture (`SettingsView`)**:
+  - Invoked via a gear button (`gearshape`, ⌘,) in the top toolbar right beside folder selection, replacing scattered secondary toolbar buttons.
+  - Divided into 4 focused categories:
+    1. **General**: Photo sorting options, background folder monitoring toggle, thumbnail grid size slider, and developer mode diagnostics.
+    2. **Library & Cache**: Disposable thumbnail cache metrics, cache path display, "Show in Finder" button, and safe "Clear Cache" button with confirmation alert. Also reports persistent database metrics from `~/Library/Application Support/KeepSake/library_index.json` and failed photo retry controls.
+    3. **Recycle Bin**: Embeds `RecycleBinView` with both tabs (False Detections & Removed from People) for restoration and permanent deletion.
+    4. **Unassigned Faces**: Embeds `UnassignedFacesView` with multi-select, bulk assign, bulk create, and folder scoping.
+
+### Two-Level Thumbnail Caching & High-Performance Scrolling
+- **Two-Level Cache Hierarchy**:
+  - **Level 1 (In-Memory `NSCache`)**: Fast synchronous memory cache holding up to 1,500 downsampled images (512 MB cost limit). `PhotoThumbnailView` checks `ThumbnailLoader.shared.cachedImage(for:)` synchronously during view instantiation, rendering instantly on the first frame with zero placeholder flashing.
+  - **Level 2 (Persistent On-Disk Cache `DiskThumbnailCache`)**: Downsampled JPEGs (Retina 2x resolution, max 640px) stored in `~/Library/Caches/com.keepsake.KeepSake/Thumbnails/` using SHA256 hashes of original photo file paths.
+- **Concurrent Decoding Pipeline**:
+  - Replaced actor-serialized decoding with thread-safe `ThumbnailLoader`, dispatching decodes to detached background tasks at `.userInitiated` priority across Apple Silicon multi-core CPUs.
+  - Leverages CoreGraphics `kCGImageSourceCreateThumbnailFromImageIfAbsent: true` to prioritize embedded EXIF thumbnail previews when available, avoiding expensive full-image decodes.
+- **Cache Purging Safety**:
+  - "Clear Cache" operates strictly on `~/Library/Caches/com.keepsake.KeepSake/Thumbnails/` and clears in-memory caches.
+  - The persistent identity database (`~/Library/Application Support/KeepSake/library_index.json`), embeddings, face records, confirmed people, and original photo files on disk are completely isolated and never affected.
+
 
