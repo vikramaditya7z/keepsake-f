@@ -13,13 +13,49 @@ KeepSake is distributed as a universal standalone disk image (`.dmg`) for macOS:
 * 📦 **[Download KeepSake for macOS (DMG)](dist/KeepSake.dmg)**
 * 🚀 **[GitHub Releases & Release Notes](https://github.com/vikramaditya7z/keepsake-f/releases)**
 
+---
+
+## macOS Security Warning: “KeepSake” Not Opened
+
+When launching KeepSake for the first time after downloading and installing from the DMG, macOS Gatekeeper may block the application and display:
+
+> **“KeepSake” Not Opened**  
+> Apple could not verify “KeepSake” is free of malware that may harm your Mac or compromise your privacy.
+
+### Why this happens
+
+The current v1.0.0 release of KeepSake is distributed independently and is **not signed or notarized with an Apple Developer ID**. Because Apple's automated notarization service has not inspected the executable, macOS Gatekeeper blocks opening by default. This security alert is standard macOS behavior for unnotarized software downloaded from the internet and does not by itself establish that the application contains malware. However, Apple has not verified KeepSake, and the developers do not claim that Apple has validated the software.
+
+For official information on macOS app verification, see Apple's documentation:  
+👉 [Apple Support: Safely open apps on your Mac](https://support.apple.com/en-in/102445)
+
+### How to open KeepSake
+
+If you downloaded KeepSake directly from the [official GitHub repository](https://github.com/vikramaditya7z/keepsake-f) and trust the application, you can use one of the following macOS override methods:
+
+#### Method 1 — Open Anyway in Privacy & Security (Recommended)
+1. On the Gatekeeper warning dialog, click **Done** (or **Cancel**).
+2. Open **Apple menu () → System Settings → Privacy & Security**.
+3. Scroll down to the **Security** section.
+4. If macOS displays a message stating *“KeepSake was blocked from use because it is not from an identified developer”*, click **Open Anyway**.
+5. Authenticate with your Mac password or Touch ID when prompted, and confirm the action.
+
 > [!NOTE]
-> **macOS Gatekeeper Notice**: Because KeepSake is independently distributed without an Apple Developer Program certificate, macOS Gatekeeper may present an *"unidentified developer"* prompt upon initial launch.
->
-> To open KeepSake:
-> 1. Right-click (or Control-click) **KeepSake.app** in your `/Applications` folder.
-> 2. Select **Open** from the context menu, then click **Open** in the dialog.
-> 3. Alternatively, open **System Settings → Privacy & Security** and click **Open Anyway**.
+> The **Open Anyway** button is typically available for about an hour after attempting to open the app. This option may not appear in every situation. If macOS reports that the application is damaged, explicitly warns of detected malware, or does not offer the expected override, **stop** and do not attempt to bypass security checks.
+
+#### Method 2 — Open using Finder
+1. Open **Finder** and navigate to your `/Applications` folder (or the directory containing `KeepSake.app`).
+2. **Control-click** (or right-click) `KeepSake.app` and select **Open** from the context menu.
+3. If macOS presents an alert asking for confirmation to open the application, review the prompt and click **Open** only if you trust the download.
+
+> [!NOTE]
+> Depending on your version of macOS (such as macOS 15 Sequoia and newer), Finder context-menu overrides may not be offered and will redirect you to the **Privacy & Security** settings panel described in Method 1.
+
+### Security Best Practices
+- **Official Source Only**: Download KeepSake exclusively from the [official GitHub repository](https://github.com/vikramaditya7z/keepsake-f) or its [verified releases](https://github.com/vikramaditya7z/keepsake-f/releases). Never download builds from untrusted third-party sites.
+- **Overrides are User Decisions**: Overriding a Gatekeeper warning tells macOS to bypass automated policy; an override is not proof or verification that an app is safe.
+- **Do Not Disable Gatekeeper Globally**: Never run commands to turn off macOS Gatekeeper globally (such as `spctl --master-disable`) or indiscriminately remove quarantine attributes from unknown files.
+- **Notarization Status**: The current release has not been notarized by Apple.
 
 ---
 
@@ -34,7 +70,7 @@ Follow these six simple steps to get started with KeepSake:
 4. Eject the disk image.
 
 ### Step 2: Launch the App
-Open **KeepSake.app** from `/Applications` (following the Gatekeeper notice above if prompted).
+Open **KeepSake.app** from `/Applications`. If macOS displays a security warning, follow the steps in the [macOS Security Warning](#macos-security-warning-keepsake-not-opened) section above.
 
 ### Step 3: Choose Your Photo Library
 When the app opens, click **Choose Folder** (or click the **+** button in the sidebar) and select any directory containing your photos (e.g. `~/Pictures` or an external drive). KeepSake accesses folders strictly with security-scoped bookmarks without modifying, moving, or re-encoding your original photos.
