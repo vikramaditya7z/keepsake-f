@@ -1,8 +1,0 @@
-program(1.0.0)
-[buildInfo = dict<string, string>({{"coremltoolsversion": "7.0"}})]
-{
-    func main(tensor<fp32, [1, 3, 112, 112]> input) -> (tensor<fp32, [1, 512]> embedding) {
-        // Simple linear transformation / global pooling for test
-        tensor<fp32, [1, 512]> embedding = const()[val = tensor<fp32, [1, 512]>(0.0)];
-    }
-}

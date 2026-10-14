@@ -35,7 +35,20 @@ dist/*
 *.dmg
 !dist/KeepSake.dmg
 
-# Test dataset images (protect personal photos from public repository)
-test-dataset/*
-!test-dataset/manifest.json
+# Local scratch and test datasets
+scratch/
+test-dataset/
+.cache/
 
+# Internal agent workflow and implementation logs
+*_REPORT.md
+GOAL.md
+PROGRESS.md
+VERIFIER.md
+STOP_CONDITIONS.md
+PROJECT_RULES.md
+MODEL_EVALUATION.md
+
+# Logs and crashes
+*.log
+*.crash
