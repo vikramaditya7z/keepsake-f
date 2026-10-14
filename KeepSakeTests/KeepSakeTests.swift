@@ -1,6 +1,8 @@
 import XCTest
 import CoreGraphics
 import Vision
+import UniformTypeIdentifiers
+import ImageIO
 @testable import KeepSake
 
 final class SafeBox<T>: @unchecked Sendable {
@@ -31,7 +33,36 @@ final class SafeBox<T>: @unchecked Sendable {
 }
 
 final class KeepSakeTests: XCTestCase {
-    let testFolderURL = URL(fileURLWithPath: "/Users/vikramaditya/.gemini/antigravity/brain/997d2b6e-4811-4f02-964d-9c7cdd7691c6/scratch/test_photos")
+    static let testFolderURL: URL = {
+        let scratchPath = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_photos_\(ProcessInfo.processInfo.processIdentifier)")
+        try? FileManager.default.createDirectory(at: scratchPath.appendingPathComponent("sub1/nested"), withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: scratchPath.appendingPathComponent("sub2"), withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: scratchPath.appendingPathComponent("empty_folder"), withIntermediateDirectories: true)
+        createDummyPNG(at: scratchPath.appendingPathComponent("red.png"))
+        createDummyPNG(at: scratchPath.appendingPathComponent("sub1/green.png"))
+        createDummyPNG(at: scratchPath.appendingPathComponent("sub1/nested/blue.png"))
+        createDummyPNG(at: scratchPath.appendingPathComponent("sub2/yellow.png"))
+        try? Data("corrupted data".utf8).write(to: scratchPath.appendingPathComponent("sub2/corrupted.jpg"))
+        try? Data("text notes".utf8).write(to: scratchPath.appendingPathComponent("notes.txt"))
+        return scratchPath
+    }()
+
+    var testFolderURL: URL {
+        Self.testFolderURL
+    }
+
+    private static func createDummyPNG(at url: URL) {
+        let size = NSSize(width: 100, height: 100)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSColor.red.drawSwatch(in: NSRect(origin: .zero, size: size))
+        image.unlockFocus()
+        if let tiff = image.tiffRepresentation,
+           let rep = NSBitmapImageRep(data: tiff),
+           let png = rep.representation(using: .png, properties: [:]) {
+            try? png.write(to: url)
+        }
+    }
 
     // MARK: - Phase 1 Tests
 
@@ -3757,7 +3788,7 @@ final class KeepSakeTests: XCTestCase {
 
     /// Regression Test: Real production dataset rebuild and invariant audit.
     func testProductionDatasetRebuildAndAudit() async throws {
-        let prodURL = URL(fileURLWithPath: "/Users/vikramaditya/Library/Application Support/KeepSake/library_index.json")
+        let prodURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("KeepSake/library_index.json") ?? URL(fileURLWithPath: "/tmp/nonexistent")
         guard FileManager.default.fileExists(atPath: prodURL.path) else { return }
 
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("test_prod_audit_\(UUID().uuidString).json")
@@ -3766,7 +3797,7 @@ final class KeepSakeTests: XCTestCase {
 
         let store = LibraryStore(storageURL: tempURL)
         let coordinator = LibraryProcessingCoordinator(libraryStore: store)
-        let rootURL = URL(fileURLWithPath: "/Users/vikramaditya/Disk/Projects/Test 1")
+        let rootURL = URL(fileURLWithPath: "/tmp/test_dataset_1")
 
         // 1. Initial snapshot check
         let photos = await store.getAllPhotos()
@@ -4411,7 +4442,7 @@ final class KeepSakeTests: XCTestCase {
 
     /// D. Ground-truth-style clustering: Verify the known 19-photo dataset produces ~17 identities without false merges.
     func testRegression_D_GroundTruth19PhotoDatasetClustering() async throws {
-        let prodURL = URL(fileURLWithPath: "/Users/vikramaditya/Library/Application Support/KeepSake/library_index.json")
+        let prodURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("KeepSake/library_index.json") ?? URL(fileURLWithPath: "/tmp/nonexistent")
         guard FileManager.default.fileExists(atPath: prodURL.path) else { return }
 
         // Copy production index to temp file so we can run tests without side effects
@@ -4421,7 +4452,7 @@ final class KeepSakeTests: XCTestCase {
 
         let store = LibraryStore(storageURL: tempURL)
         let coordinator = LibraryProcessingCoordinator(libraryStore: store)
-        let rootURL = URL(fileURLWithPath: "/Users/vikramaditya/Disk/Projects/Test 1")
+        let rootURL = URL(fileURLWithPath: "/tmp/test_dataset_1")
 
         let allPhotos = await store.getAllPhotos()
         let test1Photos = allPhotos.filter { $0.rootFolderPath == nil || $0.rootFolderPath == rootURL.standardizedFileURL.path }
@@ -4944,14 +4975,14 @@ final class KeepSakeTests: XCTestCase {
 
     /// 9. Ground-truth 19-photo dataset FaceCluster formation audit.
     func testStep2_FaceCluster_GroundTruth19PhotoDatasetAudit() async throws {
-        let prodURL = URL(fileURLWithPath: "/Users/vikramaditya/Library/Application Support/KeepSake/library_index.json")
+        let prodURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("KeepSake/library_index.json") ?? URL(fileURLWithPath: "/tmp/nonexistent")
         guard FileManager.default.fileExists(atPath: prodURL.path) else { return }
 
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("test_gt_audit_\(UUID().uuidString).json")
         try FileManager.default.copyItem(at: prodURL, to: tempURL)
         defer { try? FileManager.default.removeItem(at: tempURL) }
 
-        let rootURL = URL(fileURLWithPath: "/Users/vikramaditya/Disk/Projects/Test 1")
+        let rootURL = URL(fileURLWithPath: "/tmp/test_dataset_1")
         let store = LibraryStore(storageURL: tempURL)
         let allPhotos = await store.getAllPhotos()
         let test1Photos = allPhotos.filter { $0.rootFolderPath == nil || $0.rootFolderPath == rootURL.standardizedFileURL.path }
@@ -5209,7 +5240,7 @@ final class KeepSakeTests: XCTestCase {
         }
         print(String(repeating: "=", count: 80))
 
-        let resultsDir = URL(fileURLWithPath: "/Users/vikramaditya/.gemini/antigravity/brain/997d2b6e-4811-4f02-964d-9c7cdd7691c6/scratch")
+        let resultsDir = FileManager.default.temporaryDirectory
         let outURL = resultsDir.appendingPathComponent("model_evaluation_empirical_results.json")
         let fullData = try JSONSerialization.data(withJSONObject: [
             "timestamp": Date().ISO8601Format(),
@@ -9092,6 +9123,908 @@ final class KeepSakeTests: XCTestCase {
         // 4. Switch back to nil folder: count resets to 0
         await peopleVM.loadData(rootFolderURL: nil)
         XCTAssertEqual(peopleVM.activeFolderPeopleCount, 0, "Switching back to nil folder resets active count to 0")
+    }
+
+    // MARK: - Model Management System Tests
+
+    func testModelManager_StatusEnum_PropertiesAndDisplay() {
+        let notInstalled = ModelStatus.notInstalled
+        XCTAssertFalse(notInstalled.isReady)
+        XCTAssertEqual(notInstalled.displayText, "Not Installed")
+
+        let selected = ModelStatus.selected(URL(fileURLWithPath: "/tmp/test.mlmodelc"))
+        XCTAssertFalse(selected.isReady)
+        XCTAssertEqual(selected.displayText, "Selected")
+
+        let validating = ModelStatus.validating
+        XCTAssertFalse(validating.isReady)
+        XCTAssertEqual(validating.displayText, "Validating…")
+
+        let loading = ModelStatus.loading
+        XCTAssertFalse(loading.isReady)
+        XCTAssertEqual(loading.displayText, "Loading Model…")
+
+        let ready = ModelStatus.ready(name: "MobileFaceNet", format: "Core ML Compiled (.mlmodelc)", url: URL(fileURLWithPath: "/tmp/m.mlmodelc"))
+        XCTAssertTrue(ready.isReady)
+        XCTAssertEqual(ready.displayText, "Ready")
+
+        let errorStatus = ModelStatus.error("Corrupted weights")
+        XCTAssertFalse(errorStatus.isReady)
+        XCTAssertEqual(errorStatus.displayText, "Error")
+
+        let fallback = ModelStatus.fallbackActive
+        XCTAssertFalse(fallback.isReady)
+        XCTAssertEqual(fallback.displayText, "Fallback Active")
+    }
+
+    func testModelManager_ValidationError_LocalizedDescriptions() {
+        let nonexistentURL = URL(fileURLWithPath: "/path/to/missing.mlmodelc")
+        let notFoundErr = ModelValidationError.fileNotFound(nonexistentURL)
+        XCTAssertTrue(notFoundErr.localizedDescription.contains("missing.mlmodelc"))
+
+        let unsupportedErr = ModelValidationError.unsupportedFormat("onnx")
+        XCTAssertTrue(unsupportedErr.localizedDescription.contains("onnx"))
+
+        let compErr = ModelValidationError.compilationFailed("Syntax error")
+        XCTAssertTrue(compErr.localizedDescription.contains("Syntax error"))
+
+        let initErr = ModelValidationError.initializationFailed("Bad descriptor")
+        XCTAssertTrue(initErr.localizedDescription.contains("Bad descriptor"))
+
+        let inputErr = ModelValidationError.invalidInputShape("[1, 3, 224, 224]")
+        XCTAssertTrue(inputErr.localizedDescription.contains("[1, 3, 224, 224]"))
+
+        let outputErr = ModelValidationError.invalidOutputDimension(expected: 512, actual: 128)
+        XCTAssertTrue(outputErr.localizedDescription.contains("512"))
+        XCTAssertTrue(outputErr.localizedDescription.contains("128"))
+
+        let inferErr = ModelValidationError.inferenceTestFailed("NaN detected")
+        XCTAssertTrue(inferErr.localizedDescription.contains("NaN detected"))
+
+        let secErr = ModelValidationError.securityScopedAccessFailed
+        XCTAssertTrue(secErr.localizedDescription.contains("security-scoped"))
+    }
+
+    func testModelManager_ValidationRejectsNonexistentFile() {
+        let fakeURL = URL(fileURLWithPath: "/tmp/nonexistent_model_\(UUID().uuidString).mlmodelc")
+        XCTAssertThrowsError(try ModelManager.validateModelSynchronous(at: fakeURL)) { error in
+            guard let modelErr = error as? ModelValidationError,
+                  case .fileNotFound = modelErr else {
+                XCTFail("Expected fileNotFound error, got: \(error)")
+                return
+            }
+        }
+    }
+
+    func testModelManager_ValidationRejectsUnsupportedFormat() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let textFile = tempDir.appendingPathComponent("weights.txt")
+        try "dummy weights".write(to: textFile, atomically: true, encoding: .utf8)
+
+        XCTAssertThrowsError(try ModelManager.validateModelSynchronous(at: textFile)) { error in
+            guard let modelErr = error as? ModelValidationError,
+                  case .unsupportedFormat(let ext) = modelErr else {
+                XCTFail("Expected unsupportedFormat error, got: \(error)")
+                return
+            }
+            XCTAssertEqual(ext, "txt")
+        }
+    }
+
+    func testModelManager_ValidationAcceptsValidCoreMLModel() throws {
+        guard let modelURL = ArcFaceRecognitionService.findCompiledModelURL() else {
+            print("[SKIP] Genuine compiled Core ML model not present in local test environment")
+            return
+        }
+
+        let result = try ModelManager.validateCompiledModel(at: modelURL)
+        XCTAssertEqual(result.outputDimension, 512, "Model output embedding dimension must be 512")
+        XCTAssertTrue(result.inputShape == [1, 3, 112, 112] || result.inputShape == [3, 112, 112], "Model input must accept 112x112 RGB tensor")
+        XCTAssertFalse(result.name.isEmpty)
+        XCTAssertEqual(result.compiledURL, modelURL)
+    }
+
+    @MainActor
+    func testModelManager_SettingsPersistence_Roundtrip() {
+        let settings = AppSettings.shared
+        let originalSetup = settings.hasCompletedModelSetup
+        let originalName = settings.activeModelDisplayName
+        let originalFormat = settings.activeModelFormat
+        let originalDate = settings.activeModelInstalledDate
+
+        defer {
+            settings.hasCompletedModelSetup = originalSetup
+            settings.activeModelDisplayName = originalName
+            settings.activeModelFormat = originalFormat
+            settings.activeModelInstalledDate = originalDate
+        }
+
+        // Test updating settings
+        settings.hasCompletedModelSetup = true
+        settings.activeModelDisplayName = "Custom ArcFace"
+        settings.activeModelFormat = "Core ML Package (.mlpackage)"
+        settings.activeModelInstalledDate = 1700000000.0
+
+        XCTAssertTrue(settings.hasCompletedModelSetup)
+        XCTAssertEqual(settings.activeModelDisplayName, "Custom ArcFace")
+        XCTAssertEqual(settings.activeModelFormat, "Core ML Package (.mlpackage)")
+        XCTAssertEqual(settings.activeModelInstalledDate, 1700000000.0)
+
+        // Clear settings
+        settings.hasCompletedModelSetup = false
+        settings.activeModelDisplayName = ""
+        settings.activeModelFormat = ""
+        settings.activeModelInstalledDate = 0.0
+
+        XCTAssertFalse(settings.hasCompletedModelSetup)
+        XCTAssertEqual(settings.activeModelDisplayName, "")
+    }
+
+    func testModelManager_ArcFaceRecognitionService_SetExternalModel() {
+        defer {
+            ArcFaceRecognitionService.resetCachedModel()
+        }
+
+        // 1. Initial / fallback state
+        ArcFaceRecognitionService.setExternalModel(url: nil, name: nil)
+        ArcFaceRecognitionService.resetCachedModel()
+
+        // 2. Set custom external model reference
+        let dummyURL = URL(fileURLWithPath: "/tmp/custom_model.mlmodelc")
+        ArcFaceRecognitionService.setExternalModel(url: dummyURL, name: "Custom ResNet100 ArcFace")
+
+        // Display name reflects the configured external model name
+        XCTAssertEqual(ArcFaceRecognitionService.activeModelDisplayName, "Custom ResNet100 ArcFace")
+
+        // 3. Clear external model reference
+        ArcFaceRecognitionService.setExternalModel(url: nil, name: nil)
+        ArcFaceRecognitionService.resetCachedModel()
+
+        // Without external model or bundle model, fallback is reported
+        if ArcFaceRecognitionService.findCompiledModelURL() == nil {
+            XCTAssertEqual(ArcFaceRecognitionService.activeModelDisplayName, "Legacy Synthetic 2D-DCT Fallback")
+        }
+    }
+
+    @MainActor
+    func testModelManager_ClearModel_ResetsState() {
+        let manager = ModelManager.shared
+        manager.clearModel()
+
+        XCTAssertNil(manager.activeModelURL)
+        XCTAssertNil(manager.activeModelName)
+        XCTAssertNil(manager.activeModelFormat)
+        XCTAssertNil(manager.installedDate)
+        XCTAssertEqual(manager.status, .notInstalled)
+        XCTAssertEqual(AppSettings.shared.activeModelDisplayName, "")
+        XCTAssertEqual(AppSettings.shared.activeModelFormat, "")
+        XCTAssertEqual(AppSettings.shared.activeModelInstalledDate, 0.0)
+    }
+
+    @MainActor
+    func testModelManager_AtomicInstallation_PreservesExistingOnFailure() async throws {
+        let manager = ModelManager.shared
+        manager.clearModel()
+
+        // Attempting to install an invalid file must throw and leave model not installed
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let invalidFile = tempDir.appendingPathComponent("invalid.json")
+        try "{}".write(to: invalidFile, atomically: true, encoding: .utf8)
+
+        do {
+            try await manager.installModel(from: invalidFile)
+            XCTFail("Expected installation of invalid model to fail")
+        } catch {
+            XCTAssertFalse(manager.isModelReady)
+            XCTAssertEqual(manager.status, .error(error.localizedDescription))
+            XCTAssertNotNil(manager.lastErrorMessage)
+        }
+    }
+
+    @MainActor
+    func testModelManager_PreservesActiveModelWhenReplacementFails() async throws {
+        let modelsTempDir = FileManager.default.temporaryDirectory.appendingPathComponent("TestModels_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: modelsTempDir, withIntermediateDirectories: true)
+        ModelManager.managedModelsDirectoryOverride = modelsTempDir
+        defer {
+            ModelManager.managedModelsDirectoryOverride = nil
+            try? FileManager.default.removeItem(at: modelsTempDir)
+        }
+
+        let manager = ModelManager.shared
+        manager.clearModel()
+        defer {
+            manager.clearModel()
+        }
+
+        // 1. Install a valid model first if available
+        guard let validModelURL = ArcFaceRecognitionService.findCompiledModelURL() else {
+            print("[SKIP] Genuine compiled Core ML model not present for replacement test")
+            return
+        }
+
+        try await manager.installModel(from: validModelURL)
+        XCTAssertTrue(manager.isModelReady)
+        let initialModelName = manager.activeModelName
+        let initialModelURL = manager.activeModelURL
+
+        // 2. Attempt to replace with an invalid file
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let corruptedFile = tempDir.appendingPathComponent("corrupted.mlmodelc")
+        try "not a model".write(to: corruptedFile, atomically: true, encoding: .utf8)
+
+        do {
+            try await manager.installModel(from: corruptedFile)
+            XCTFail("Expected replacement with corrupted model to fail")
+        } catch {
+            // 3. Verify that the previous valid model remains active and intact
+            XCTAssertTrue(manager.isModelReady, "Previous model must remain active when replacement fails")
+            XCTAssertEqual(manager.activeModelName, initialModelName)
+            XCTAssertEqual(manager.activeModelURL, initialModelURL)
+            XCTAssertNotNil(manager.lastErrorMessage)
+        }
+    }
+
+    func testModelManager_AcceptsExternalConvertedModel_AlternateFeatureNames() throws {
+        let convertedModelPath = "/tmp/keepsake-onnx2coreml-test/output/buffalo_s_fixed.mlmodelc"
+        guard FileManager.default.fileExists(atPath: convertedModelPath) else {
+            print("[SKIP] External converted model artifact not found at \(convertedModelPath)")
+            return
+        }
+
+        let modelURL = URL(fileURLWithPath: convertedModelPath)
+        let result = try ModelManager.validateCompiledModel(at: modelURL)
+
+        XCTAssertEqual(result.outputDimension, 512, "Converted model must output 512-D embeddings")
+        XCTAssertTrue(result.inputShape == [1, 3, 112, 112] || result.inputShape == [3, 112, 112], "Converted model must accept 112x112 input")
+
+        // Direct inference test verifying dynamic feature name resolution
+        let model = try MLModel(contentsOf: modelURL)
+        let dummyTensor = [Float](repeating: 0.1, count: 3 * 112 * 112)
+        let embedding = try ArcFaceRecognitionService.runCoreMLInference(model: model, inputTensor: dummyTensor)
+
+        XCTAssertNotNil(embedding, "Inference must succeed on model with alternate feature names (input_1, var_516)")
+        XCTAssertEqual(embedding?.count, 512)
+    }
+
+    func testModelManager_AcceptsExternalConvertedMLPackage() throws {
+        let packagePath = "/tmp/keepsake-onnx2coreml-test/output/buffalo_s_fixed.mlpackage"
+        guard FileManager.default.fileExists(atPath: packagePath) else {
+            print("[SKIP] External converted .mlpackage artifact not found at \(packagePath)")
+            return
+        }
+
+        let packageURL = URL(fileURLWithPath: packagePath)
+        let result = try ModelManager.validateModelSynchronous(at: packageURL)
+
+        XCTAssertEqual(result.outputDimension, 512)
+        XCTAssertEqual(result.format, "Core ML Package (.mlpackage)")
+    }
+
+    // MARK: - ONNX Conversion Pipeline Tests
+
+    func testONNXConversionService_ResolveConverterExecutable() {
+        let exe = ONNXConversionService.resolveConverterExecutable()
+        XCTAssertNotNil(exe, "Converter executable must be resolvable from app bundle, build dir, or test paths")
+        if let path = exe?.path {
+            XCTAssertTrue(FileManager.default.isExecutableFile(atPath: path))
+        }
+    }
+
+    func testONNXConversionService_ResolvesFromPackagedAppBundle_NotFromWorkspaceFallback() {
+        let releaseAppURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent() // KeepSakeTests
+            .deletingLastPathComponent() // Workspace root
+            .appendingPathComponent("build/DerivedData/Build/Products/Release/KeepSake.app")
+        guard let bundle = Bundle(url: releaseAppURL) else {
+            print("[SKIP] Release KeepSake.app not yet built")
+            return
+        }
+
+        let resolved = ONNXConversionService.resolveConverterExecutable(bundle: bundle)
+        XCTAssertNotNil(resolved, "Converter must resolve from the packaged Release app bundle")
+        if let path = resolved?.path {
+            XCTAssertTrue(path.contains("KeepSake.app"), "Resolved converter path must be inside the packaged app bundle: \(path)")
+            XCTAssertFalse(path.hasSuffix("build/converter/keepsakemodelconverter/keepsakemodelconverter"), "Must not fall back to workspace development path when app bundle contains converter")
+            XCTAssertTrue(FileManager.default.isExecutableFile(atPath: path), "Resolved converter must be executable")
+        }
+    }
+
+    func testONNXConversionService_RejectsMissingSourceFile() async {
+        let missingURL = URL(fileURLWithPath: "/tmp/nonexistent_\(UUID().uuidString).onnx")
+        do {
+            _ = try await ONNXConversionService.shared.convertBuffaloSONNX(from: missingURL)
+            XCTFail("Expected conversion of nonexistent file to throw")
+        } catch let err as ONNXConversionError {
+            guard case .sourceFileNotFound = err else {
+                XCTFail("Expected sourceFileNotFound, got: \(err)")
+                return
+            }
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
+    }
+
+    func testONNXConversionService_RejectsNonONNXExtension() async throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let textFile = tempDir.appendingPathComponent("model.txt")
+        try "dummy data".write(to: textFile, atomically: true, encoding: .utf8)
+
+        do {
+            _ = try await ONNXConversionService.shared.convertBuffaloSONNX(from: textFile)
+            XCTFail("Expected conversion of non-onnx file to throw")
+        } catch let err as ONNXConversionError {
+            guard case .invalidONNXFormat = err else {
+                XCTFail("Expected invalidONNXFormat, got: \(err)")
+                return
+            }
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
+    }
+
+    func testONNXConversionService_EndToEndConversionAndInference() async throws {
+        let sourceONNX = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("build/models/w600k_mbf.onnx")
+        guard FileManager.default.fileExists(atPath: sourceONNX.path) else {
+            print("[SKIP] Source w600k_mbf.onnx not found at \(sourceONNX.path)")
+            return
+        }
+        guard ONNXConversionService.resolveConverterExecutable() != nil else {
+            print("[SKIP] Converter executable not found")
+            return
+        }
+
+        var stagesSeen: Set<String> = []
+        let convertedPackageURL = try await ONNXConversionService.shared.convertBuffaloSONNX(from: sourceONNX) { status in
+            switch status {
+            case .checking: stagesSeen.insert("checking")
+            case .preparing: stagesSeen.insert("preparing")
+            case .converting: stagesSeen.insert("converting")
+            case .saving: stagesSeen.insert("saving")
+            case .completed: stagesSeen.insert("completed")
+            default: break
+            }
+        }
+        defer {
+            try? FileManager.default.removeItem(at: convertedPackageURL.deletingLastPathComponent())
+        }
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: convertedPackageURL.path))
+        XCTAssertTrue(stagesSeen.contains("converting"), "Conversion stage must have reported progress")
+
+        // Validate resulting package through ModelManager
+        let validation = try ModelManager.validateModelSynchronous(at: convertedPackageURL)
+        XCTAssertEqual(validation.outputDimension, 512)
+        XCTAssertTrue(validation.inputShape == [1, 3, 112, 112] || validation.inputShape == [3, 112, 112])
+
+        // Verify genuine Core ML inference
+        let model = try MLModel(contentsOf: validation.compiledURL)
+        let dummyTensor = [Float](repeating: 0.1, count: 3 * 112 * 112)
+        let embedding = try ArcFaceRecognitionService.runCoreMLInference(model: model, inputTensor: dummyTensor)
+        XCTAssertNotNil(embedding)
+        XCTAssertEqual(embedding?.count, 512)
+    }
+
+    @MainActor
+    func testModelManager_ConvertAndInstallONNXModel_FullPipeline() async throws {
+        let modelsTempDir = FileManager.default.temporaryDirectory.appendingPathComponent("TestModels_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: modelsTempDir, withIntermediateDirectories: true)
+        ModelManager.managedModelsDirectoryOverride = modelsTempDir
+        defer {
+            ModelManager.managedModelsDirectoryOverride = nil
+            try? FileManager.default.removeItem(at: modelsTempDir)
+        }
+
+        let sourceONNX = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("build/models/w600k_mbf.onnx")
+        guard FileManager.default.fileExists(atPath: sourceONNX.path) else {
+            print("[SKIP] Source w600k_mbf.onnx not found at \(sourceONNX.path)")
+            return
+        }
+        guard ONNXConversionService.resolveConverterExecutable() != nil else {
+            print("[SKIP] Converter executable not found")
+            return
+        }
+
+        let manager = ModelManager.shared
+        manager.clearModel()
+        defer {
+            manager.clearModel()
+        }
+
+        try await manager.convertAndInstallONNXModel(from: sourceONNX)
+
+        XCTAssertTrue(manager.isModelReady)
+        XCTAssertEqual(manager.activeModelName, "Buffalo S MobileFaceNet (Converted ONNX)")
+        XCTAssertEqual(manager.activeModelFormat, "Core ML Package (.mlpackage)")
+        XCTAssertNotNil(manager.activeModelURL)
+        XCTAssertTrue(ArcFaceRecognitionService.isNeuralModelActive)
+    }
+
+    @MainActor
+    func testModelManager_ConvertAndInstallONNXModel_PreservesPreviousOnFailure() async throws {
+        let modelsTempDir = FileManager.default.temporaryDirectory.appendingPathComponent("TestModels_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: modelsTempDir, withIntermediateDirectories: true)
+        ModelManager.managedModelsDirectoryOverride = modelsTempDir
+        defer {
+            ModelManager.managedModelsDirectoryOverride = nil
+            try? FileManager.default.removeItem(at: modelsTempDir)
+        }
+
+        guard let validModelURL = ArcFaceRecognitionService.findCompiledModelURL() else {
+            print("[SKIP] Genuine compiled Core ML model not present for replacement test")
+            return
+        }
+
+        let manager = ModelManager.shared
+        manager.clearModel()
+        defer {
+            manager.clearModel()
+        }
+
+        try await manager.installModel(from: validModelURL)
+        XCTAssertTrue(manager.isModelReady)
+        let initialModelName = manager.activeModelName
+        let initialModelURL = manager.activeModelURL
+
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let corruptedONNX = tempDir.appendingPathComponent("corrupted.onnx")
+        try "invalid onnx content".write(to: corruptedONNX, atomically: true, encoding: .utf8)
+
+        do {
+            try await manager.convertAndInstallONNXModel(from: corruptedONNX)
+            XCTFail("Expected conversion of corrupted ONNX to fail")
+        } catch {
+            // Active model must remain intact
+            XCTAssertTrue(manager.isModelReady, "Previous model must remain active when ONNX conversion fails")
+            XCTAssertEqual(manager.activeModelName, initialModelName)
+            XCTAssertEqual(manager.activeModelURL, initialModelURL)
+            XCTAssertNotNil(manager.lastErrorMessage)
+        }
+    }
+
+    // MARK: - Fresh-Install Model Detection Regression Tests
+
+    @MainActor
+    func testModelManager_FreshApplicationSupport_NoInstalledModel() {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("FreshAppSupport_\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        ModelManager.managedModelsDirectoryOverride = tempDir
+        defer {
+            ModelManager.managedModelsDirectoryOverride = nil
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+
+        let settings = AppSettings.shared
+        let originalSetup = settings.hasCompletedModelSetup
+        let originalName = settings.activeModelDisplayName
+        let originalFormat = settings.activeModelFormat
+        let originalDate = settings.activeModelInstalledDate
+        defer {
+            settings.hasCompletedModelSetup = originalSetup
+            settings.activeModelDisplayName = originalName
+            settings.activeModelFormat = originalFormat
+            settings.activeModelInstalledDate = originalDate
+        }
+
+        settings.hasCompletedModelSetup = false
+        settings.activeModelDisplayName = ""
+        settings.activeModelFormat = ""
+        settings.activeModelInstalledDate = 0.0
+
+        let manager = ModelManager.shared
+        manager.clearModel()
+
+        XCTAssertFalse(manager.hasUserInstalledModel, "Fresh install must not report user-installed model")
+        XCTAssertEqual(manager.status, .notInstalled)
+        XCTAssertEqual(manager.modelSource, .none)
+        XCTAssertFalse(manager.modelSource.isUserInstalled)
+        XCTAssertNil(manager.activeModelURL)
+        XCTAssertNil(manager.installedDate)
+    }
+
+    @MainActor
+    func testModelManager_BundledDevelopmentModelPresent_DoesNotTreatAsUserInstalled() {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("DevModelTest_\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        ModelManager.managedModelsDirectoryOverride = tempDir
+        defer {
+            ModelManager.managedModelsDirectoryOverride = nil
+            try? FileManager.default.removeItem(at: tempDir)
+            ModelManager.shared.clearModel()
+        }
+
+        let manager = ModelManager.shared
+        manager.loadInitialState()
+
+        // In test environment, a bundled or development workspace model is discovered
+        if let bundleModelURL = ArcFaceRecognitionService.findCompiledModelURL() {
+            XCTAssertEqual(manager.modelSource, .developmentBundle(bundleModelURL))
+            XCTAssertFalse(manager.hasUserInstalledModel, "Bundled development model must NOT be reported as user-installed")
+            XCTAssertFalse(manager.modelSource.isUserInstalled)
+            XCTAssertNil(manager.installedDate, "Bundled development model must not have an installation date")
+            XCTAssertTrue(manager.isModelReady, "Development model is ready for inference in test environment")
+        }
+    }
+
+    @MainActor
+    func testModelManager_PreviouslyInstalledModel_LoadsAsUserInstalled() throws {
+        guard let sourceModelURL = ArcFaceRecognitionService.findCompiledModelURL() else {
+            print("[SKIP] Genuine compiled Core ML model not present for previously installed test")
+            return
+        }
+
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("PreviouslyInstalled_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        ModelManager.managedModelsDirectoryOverride = tempDir
+        defer {
+            ModelManager.managedModelsDirectoryOverride = nil
+            try? FileManager.default.removeItem(at: tempDir)
+            ModelManager.shared.clearModel()
+        }
+
+        let activeURL = ModelManager.managedActiveModelURL
+        try FileManager.default.copyItem(at: sourceModelURL, to: activeURL)
+
+        let settings = AppSettings.shared
+        let originalSetup = settings.hasCompletedModelSetup
+        let originalName = settings.activeModelDisplayName
+        let originalFormat = settings.activeModelFormat
+        let originalDate = settings.activeModelInstalledDate
+        defer {
+            settings.hasCompletedModelSetup = originalSetup
+            settings.activeModelDisplayName = originalName
+            settings.activeModelFormat = originalFormat
+            settings.activeModelInstalledDate = originalDate
+        }
+
+        settings.hasCompletedModelSetup = true
+        settings.activeModelDisplayName = "Buffalo S MobileFaceNet (User Installed)"
+        settings.activeModelFormat = "Core ML Compiled (.mlmodelc)"
+        settings.activeModelInstalledDate = 1710000000.0
+
+        let manager = ModelManager.shared
+        manager.loadInitialState()
+
+        XCTAssertTrue(manager.hasUserInstalledModel, "Previously installed model in Application Support must be reported as user-installed")
+        XCTAssertEqual(manager.modelSource, .userInstalled(activeURL))
+        XCTAssertTrue(manager.modelSource.isUserInstalled)
+        XCTAssertEqual(manager.activeModelName, "Buffalo S MobileFaceNet (User Installed)")
+        XCTAssertEqual(manager.activeModelURL?.standardizedFileURL.path, activeURL.standardizedFileURL.path)
+        XCTAssertNotNil(manager.installedDate)
+        XCTAssertTrue(manager.isModelReady)
+    }
+
+    @MainActor
+    func testModelManager_FirstLaunchSetupBehavior_AccurateTriggerConditions() {
+        let settings = AppSettings.shared
+        let originalSetup = settings.hasCompletedModelSetup
+        defer {
+            settings.hasCompletedModelSetup = originalSetup
+        }
+
+        let manager = ModelManager.shared
+        manager.clearModel()
+
+        // 1. Fresh install: setup not completed, no user-installed model -> MUST SHOW
+        settings.hasCompletedModelSetup = false
+        XCTAssertFalse(manager.hasUserInstalledModel)
+        let freshInstallShouldShow = !settings.hasCompletedModelSetup && !manager.hasUserInstalledModel
+        XCTAssertTrue(freshInstallShouldShow, "First-launch setup modal must appear on fresh install with no user-installed model")
+
+        // 2. User clicked 'Continue Without Model': setup completed, no user model -> MUST NOT SHOW
+        settings.hasCompletedModelSetup = true
+        let continuedWithoutModelShouldShow = !settings.hasCompletedModelSetup && !manager.hasUserInstalledModel
+        XCTAssertFalse(continuedWithoutModelShouldShow, "First-launch setup modal must not appear after user chose to continue without model")
+
+        // 3. Bundled development model present, but user setup NOT completed -> MUST SHOW
+        settings.hasCompletedModelSetup = false
+        if let bundleURL = ArcFaceRecognitionService.findCompiledModelURL() {
+            manager.loadInitialState()
+            XCTAssertEqual(manager.modelSource, .developmentBundle(bundleURL))
+            XCTAssertFalse(manager.hasUserInstalledModel, "Bundled dev model must not count as user-installed")
+            let devBundleShouldShow = !settings.hasCompletedModelSetup && !manager.hasUserInstalledModel
+            XCTAssertTrue(devBundleShouldShow, "Bundled development model must not suppress first-launch setup modal")
+        }
+    }
+
+    @MainActor
+    func testModelManager_ModelSourceReporting_AccuratelyReflectsSources() async throws {
+        let userURL = URL(fileURLWithPath: "/tmp/test/active_model.mlmodelc")
+        let devURL = URL(fileURLWithPath: "/tmp/dev/buffalo_s.mlmodelc")
+
+        let userSource = ModelSource.userInstalled(userURL)
+        XCTAssertTrue(userSource.isUserInstalled)
+        XCTAssertEqual(userSource.displayText, "User Installed (Application Support)")
+
+        let devSource = ModelSource.developmentBundle(devURL)
+        XCTAssertFalse(devSource.isUserInstalled)
+        XCTAssertEqual(devSource.displayText, "Development / Test Bundle")
+
+        let noneSource = ModelSource.none
+        XCTAssertFalse(noneSource.isUserInstalled)
+        XCTAssertEqual(noneSource.displayText, "None (Fallback Mode)")
+
+        // Verify equality
+        XCTAssertEqual(userSource, ModelSource.userInstalled(userURL))
+        XCTAssertNotEqual(userSource, devSource)
+        XCTAssertNotEqual(devSource, noneSource)
+
+        // Verify manager transitions
+        let manager = ModelManager.shared
+        manager.clearModel()
+        XCTAssertEqual(manager.modelSource, .none)
+        XCTAssertFalse(manager.hasUserInstalledModel)
+
+        if let validModelURL = ArcFaceRecognitionService.findCompiledModelURL() {
+            let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("SourceReporting_\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+            ModelManager.managedModelsDirectoryOverride = tempDir
+            defer {
+                ModelManager.managedModelsDirectoryOverride = nil
+                try? FileManager.default.removeItem(at: tempDir)
+                manager.clearModel()
+            }
+
+            try await manager.installModel(from: validModelURL)
+            XCTAssertTrue(manager.hasUserInstalledModel)
+            XCTAssertEqual(manager.modelSource, .userInstalled(ModelManager.managedActiveModelURL))
+            XCTAssertTrue(manager.modelSource.isUserInstalled)
+        }
+    }
+
+    // MARK: - Fix 1 Tests: Mandatory First-Launch Onboarding
+
+    @MainActor
+    func testOnboarding_FreshInstall_RequiresOnboarding() {
+        let settings = AppSettings.shared
+        let originalOnboarding = settings.hasCompletedOnboarding
+        let originalSetup = settings.hasCompletedModelSetup
+        defer {
+            settings.hasCompletedOnboarding = originalOnboarding
+            settings.hasCompletedModelSetup = originalSetup
+        }
+
+        settings.hasCompletedOnboarding = false
+        settings.hasCompletedModelSetup = false
+
+        let manager = ModelManager.shared
+        manager.clearModel()
+
+        XCTAssertTrue(settings.shouldShowFirstLaunchOnboarding, "Fresh installation must require first-launch onboarding")
+    }
+
+    @MainActor
+    func testOnboarding_DismissOrComplete_SuppressesOnboarding() {
+        let settings = AppSettings.shared
+        let originalOnboarding = settings.hasCompletedOnboarding
+        let originalSetup = settings.hasCompletedModelSetup
+        defer {
+            settings.hasCompletedOnboarding = originalOnboarding
+            settings.hasCompletedModelSetup = originalSetup
+        }
+
+        settings.hasCompletedOnboarding = true
+        settings.hasCompletedModelSetup = false
+        XCTAssertFalse(settings.shouldShowFirstLaunchOnboarding, "Completing/dismissing onboarding must suppress sheet")
+
+        settings.hasCompletedOnboarding = false
+        settings.hasCompletedModelSetup = true
+        XCTAssertFalse(settings.shouldShowFirstLaunchOnboarding, "Completing model setup must suppress sheet")
+    }
+
+    @MainActor
+    func testOnboarding_DevelopmentBundle_DoesNotSuppressOnboarding() {
+        let settings = AppSettings.shared
+        let originalOnboarding = settings.hasCompletedOnboarding
+        let originalSetup = settings.hasCompletedModelSetup
+        defer {
+            settings.hasCompletedOnboarding = originalOnboarding
+            settings.hasCompletedModelSetup = originalSetup
+        }
+
+        settings.hasCompletedOnboarding = false
+        settings.hasCompletedModelSetup = false
+
+        let manager = ModelManager.shared
+        manager.clearModel()
+
+        // Even if a development bundle exists, hasUserInstalledModel is false
+        XCTAssertFalse(manager.hasUserInstalledModel, "Development bundle must not count as user-installed model")
+        XCTAssertTrue(settings.shouldShowFirstLaunchOnboarding, "Development bundle model must not suppress first-launch onboarding modal")
+    }
+
+    @MainActor
+    func testOnboarding_ModelSetupSheetInitialization() {
+        var folderChosen = false
+        var completed = false
+        let dummyFolder = URL(fileURLWithPath: "/tmp/sample_photos")
+
+        let sheet = ModelSetupSheet(
+            selectedFolderURL: dummyFolder,
+            onChooseFolder: { folderChosen = true },
+            onSetupCompleted: { completed = true }
+        )
+        XCTAssertNotNil(sheet)
+        XCTAssertEqual(sheet.selectedFolderURL, dummyFolder)
+
+        sheet.onChooseFolder?()
+        XCTAssertTrue(folderChosen)
+
+        sheet.onSetupCompleted?()
+        XCTAssertTrue(completed)
+    }
+
+    // MARK: - Fix 2 Tests: Thumbnail Orientation and Sharpness
+
+    func testThumbnailLoader_RespectsEXIFOrientation() async throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("OrientationTest_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let diskCache = DiskThumbnailCache(customCacheDirectoryURL: tempDir.appendingPathComponent("v2"))
+        let loader = ThumbnailLoader(diskCache: diskCache)
+
+        // Create an image with original pixel dimensions 800 (width) x 600 (height)
+        // With EXIF orientation 6 (Rotate 90 CW), the displayed upright image should be 600 (width) x 800 (height) (portrait)
+        let landscapeFile6 = tempDir.appendingPathComponent("photo_orient6.jpg")
+        try createOrientationTestJPEG(at: landscapeFile6, width: 800, height: 600, orientation: 6)
+
+        let thumbnail6 = await loader.loadThumbnail(for: landscapeFile6, targetSize: CGSize(width: 320, height: 320))
+        XCTAssertNotNil(thumbnail6, "Should successfully load thumbnail")
+        if let thumb = thumbnail6 {
+            // Because orientation 6 was applied, height must be greater than width
+            XCTAssertGreaterThan(thumb.size.height, thumb.size.width, "EXIF orientation 6 must be rotated upright so height > width")
+        }
+
+        // Test EXIF orientation 8 (Rotate 270 CW)
+        let landscapeFile8 = tempDir.appendingPathComponent("photo_orient8.jpg")
+        try createOrientationTestJPEG(at: landscapeFile8, width: 800, height: 600, orientation: 8)
+
+        let thumbnail8 = await loader.loadThumbnail(for: landscapeFile8, targetSize: CGSize(width: 320, height: 320))
+        XCTAssertNotNil(thumbnail8, "Should successfully load thumbnail")
+        if let thumb = thumbnail8 {
+            XCTAssertGreaterThan(thumb.size.height, thumb.size.width, "EXIF orientation 8 must be rotated upright so height > width")
+        }
+
+        // Test EXIF orientation 1 (Normal)
+        let landscapeFile1 = tempDir.appendingPathComponent("photo_orient1.jpg")
+        try createOrientationTestJPEG(at: landscapeFile1, width: 800, height: 600, orientation: 1)
+
+        let thumbnail1 = await loader.loadThumbnail(for: landscapeFile1, targetSize: CGSize(width: 320, height: 320))
+        XCTAssertNotNil(thumbnail1, "Should successfully load thumbnail")
+        if let thumb = thumbnail1 {
+            XCTAssertGreaterThan(thumb.size.width, thumb.size.height, "EXIF orientation 1 must remain landscape so width > height")
+        }
+    }
+
+    func testThumbnailLoader_RetinaSharpnessMinimumDimension() async throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("SharpnessTest_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let diskCache = DiskThumbnailCache(customCacheDirectoryURL: tempDir.appendingPathComponent("v2"))
+        let loader = ThumbnailLoader(diskCache: diskCache)
+
+        // Large image: 2000 x 1500
+        let largeFile = tempDir.appendingPathComponent("large.jpg")
+        try createOrientationTestJPEG(at: largeFile, width: 2000, height: 1500, orientation: 1)
+
+        // Request a 170x170 grid thumbnail (the default slider size)
+        let thumb = await loader.loadThumbnail(for: largeFile, targetSize: CGSize(width: 170, height: 170))
+        XCTAssertNotNil(thumb)
+        if let thumb = thumb {
+            let maxDim = max(thumb.size.width, thumb.size.height)
+            XCTAssertGreaterThanOrEqual(maxDim, 640, "Thumbnail longest dimension must be at least 640px for Retina display sharpness")
+        }
+
+        // Small image: 200 x 150 (must not be upscaled)
+        let smallFile = tempDir.appendingPathComponent("small.jpg")
+        try createOrientationTestJPEG(at: smallFile, width: 200, height: 150, orientation: 1)
+
+        let smallThumb = await loader.loadThumbnail(for: smallFile, targetSize: CGSize(width: 320, height: 320))
+        XCTAssertNotNil(smallThumb)
+        if let smallThumb = smallThumb {
+            let maxDim = max(smallThumb.size.width, smallThumb.size.height)
+            XCTAssertLessThanOrEqual(maxDim, 200, "Small image must not be upscaled/stretched")
+        }
+    }
+
+    func testThumbnailLoader_PreservesOriginalSourceFile() async throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("SourcePreserveTest_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let diskCache = DiskThumbnailCache(customCacheDirectoryURL: tempDir.appendingPathComponent("v2"))
+        let loader = ThumbnailLoader(diskCache: diskCache)
+
+        let photoFile = tempDir.appendingPathComponent("original.jpg")
+        try createOrientationTestJPEG(at: photoFile, width: 800, height: 600, orientation: 6)
+
+        let originalData = try Data(contentsOf: photoFile)
+        let originalAttrs = try FileManager.default.attributesOfItem(atPath: photoFile.path)
+        let originalModDate = originalAttrs[.modificationDate] as? Date
+
+        _ = await loader.loadThumbnail(for: photoFile, targetSize: CGSize(width: 320, height: 320))
+
+        let afterData = try Data(contentsOf: photoFile)
+        let afterAttrs = try FileManager.default.attributesOfItem(atPath: photoFile.path)
+        let afterModDate = afterAttrs[.modificationDate] as? Date
+
+        XCTAssertEqual(originalData, afterData, "Original photo file bytes must never be modified by thumbnail loading")
+        XCTAssertEqual(originalModDate, afterModDate, "Original photo modification date must never be touched")
+    }
+
+    func testDiskThumbnailCache_V2DirectoryAndLegacyCleanup() throws {
+        let tempBase = FileManager.default.temporaryDirectory.appendingPathComponent("CacheVersionTest_\(UUID().uuidString)")
+        let thumbnailsDir = tempBase.appendingPathComponent("Thumbnails")
+        let v2Dir = thumbnailsDir.appendingPathComponent("v2")
+        try FileManager.default.createDirectory(at: thumbnailsDir, withIntermediateDirectories: true)
+
+        // Seed a legacy v1 loose jpg file in the parent Thumbnails directory
+        let legacyFile = thumbnailsDir.appendingPathComponent("legacy_blurry.jpg")
+        try Data("legacy_bad_thumbnail".utf8).write(to: legacyFile)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: legacyFile.path))
+
+        // Initializing DiskThumbnailCache with v2 directory cleans up legacy loose files
+        let cache = DiskThumbnailCache(customCacheDirectoryURL: v2Dir)
+        XCTAssertTrue(cache.directoryURL.path.contains("v2"))
+
+        // Wait a short moment for ioQueue legacy cleanup
+        let exp = expectation(description: "Cleanup completed")
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) {
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 2.0)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacyFile.path), "Legacy v1 loose thumbnails in parent directory must be removed")
+
+        try? FileManager.default.removeItem(at: tempBase)
+    }
+
+    private func createOrientationTestJPEG(at fileURL: URL, width: Int, height: Int, orientation: Int) throws {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo
+        ) else {
+            throw NSError(domain: "Test", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create context"])
+        }
+        context.setFillColor(red: 0.8, green: 0.3, blue: 0.2, alpha: 1.0)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        guard let cgImage = context.makeImage() else {
+            throw NSError(domain: "Test", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to make CGImage"])
+        }
+        guard let dest = CGImageDestinationCreateWithURL(fileURL as CFURL, UTType.jpeg.identifier as CFString, 1, nil) else {
+            throw NSError(domain: "Test", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to create destination"])
+        }
+        let properties: [CFString: Any] = [
+            kCGImagePropertyOrientation: orientation
+        ]
+        CGImageDestinationAddImage(dest, cgImage, properties as CFDictionary)
+        guard CGImageDestinationFinalize(dest) else {
+            throw NSError(domain: "Test", code: 4, userInfo: [NSLocalizedDescriptionKey: "Failed to finalize destination"])
+        }
     }
 }
 

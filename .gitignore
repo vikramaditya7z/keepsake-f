@@ -21,11 +21,19 @@ library_index.json
 *.photoslibrary
 
 # Local model conversion and generated artifacts
+*.mlmodel
 *.mlmodelc/
 *.mlpackage/
 *.onnx
 *.bin
 *.pth
+Models/
+
+# Distribution artifacts
+dist/*
+!dist/KeepSake.dmg
+*.dmg
+!dist/KeepSake.dmg
 
 # Test dataset images (protect personal photos from public repository)
 test-dataset/*

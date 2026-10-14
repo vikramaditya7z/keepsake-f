@@ -45,32 +45,20 @@ public final class ThumbnailLoader: @unchecked Sendable {
 
         // Concurrent background decoding
         return await Task.detached(priority: .userInitiated) { [weak self, memoryCache = self.memoryCache, diskCache = self.diskCache] () -> NSImage? in
-            let maxPixelSize = max(targetSize.width, targetSize.height) * 2 // 2x for Retina display sharpness
+            // Retina display sharpness: 2x scale factor, with a minimum dimension of 640px
+            let maxPixelSize = max(Int(max(targetSize.width, targetSize.height) * 2), 640)
 
-            // Try fast thumbnail decoding from embedded metadata if available, else generate
-            let fastOptions: [CFString: Any] = [
-                kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+            // Always decode thumbnail from full image data with orientation transform applied.
+            // This prevents blurry and sideways thumbnails caused by unrotated embedded EXIF previews.
+            let options: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceShouldCacheImmediately: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: Int(maxPixelSize)
+                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
             ]
 
-            guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else {
-                return nil
-            }
-
-            var cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, fastOptions as CFDictionary)
-            if cgImage == nil {
-                let fallbackOptions: [CFString: Any] = [
-                    kCGImageSourceCreateThumbnailFromImageAlways: true,
-                    kCGImageSourceShouldCacheImmediately: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceThumbnailMaxPixelSize: Int(maxPixelSize)
-                ]
-                cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, fallbackOptions as CFDictionary)
-            }
-
-            guard let finalCGImage = cgImage else {
+            guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
+                  let finalCGImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
                 return nil
             }
 

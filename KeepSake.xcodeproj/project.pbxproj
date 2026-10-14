@@ -55,6 +55,9 @@
 		B10000012A00000000000046 /* AssignCandidateGroupSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000022A00000000000046 /* AssignCandidateGroupSheet.swift */; };
 		C10000012A00000000000047 /* DiskThumbnailCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000022A00000000000047 /* DiskThumbnailCache.swift */; };
 		C10000012A00000000000048 /* SuggestionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000022A00000000000048 /* SuggestionsView.swift */; };
+		D10000012A00000000000049 /* ModelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000022A00000000000049 /* ModelManager.swift */; };
+		D10000012A0000000000004A /* ModelSetupSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000022A0000000000004A /* ModelSetupSheet.swift */; };
+		D10000012A0000000000004B /* ONNXConversionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000022A0000000000004B /* ONNXConversionService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -119,6 +122,9 @@
 		B10000022A00000000000046 /* AssignCandidateGroupSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssignCandidateGroupSheet.swift; sourceTree = "<group>"; };
 		C10000022A00000000000047 /* DiskThumbnailCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskThumbnailCache.swift; sourceTree = "<group>"; };
 		C10000022A00000000000048 /* SuggestionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionsView.swift; sourceTree = "<group>"; };
+		D10000022A00000000000049 /* ModelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelManager.swift; sourceTree = "<group>"; };
+		D10000022A0000000000004A /* ModelSetupSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelSetupSheet.swift; sourceTree = "<group>"; };
+		D10000022A0000000000004B /* ONNXConversionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ONNXConversionService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -203,6 +209,8 @@
 				A10000022A0000000000003F /* LibraryProcessingQueue.swift */,
 				A10000022A00000000000040 /* FolderMonitorService.swift */,
 				C10000022A00000000000047 /* DiskThumbnailCache.swift */,
+				D10000022A00000000000049 /* ModelManager.swift */,
+				D10000022A0000000000004B /* ONNXConversionService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -228,6 +236,7 @@
 				A10000022A00000000000030 /* FaceClusteringExperimentView.swift */,
 				A10000022A00000000000043 /* SettingsView.swift */,
 				A10000022A00000000000044 /* WelcomeView.swift */,
+				D10000022A0000000000004A /* ModelSetupSheet.swift */,
 				A10000052A00000000000022 /* People */,
 				C10000052A00000000000048 /* Suggestions */,
 			);
@@ -429,6 +438,9 @@
 				B10000012A00000000000046 /* AssignCandidateGroupSheet.swift in Sources */,
 				C10000012A00000000000047 /* DiskThumbnailCache.swift in Sources */,
 				C10000012A00000000000048 /* SuggestionsView.swift in Sources */,
+				D10000012A00000000000049 /* ModelManager.swift in Sources */,
+				D10000012A0000000000004A /* ModelSetupSheet.swift in Sources */,
+				D10000012A0000000000004B /* ONNXConversionService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

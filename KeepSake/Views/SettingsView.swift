@@ -11,10 +11,14 @@ struct SettingsView: View {
     @ObservedObject var settings = AppSettings.shared
     @ObservedObject var browserViewModel: PhotoBrowserViewModel
     @ObservedObject var peopleViewModel: PeopleViewModel
+    @ObservedObject var modelManager = ModelManager.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var diskCacheSizeText: String = "Calculating…"
     @State private var showConfirmClearCache: Bool = false
+    @State private var showConfirmClearModel: Bool = false
+    @State private var showModelInstructions: Bool = false
+    @State private var showOnboardingGuide: Bool = false
     @State private var selectedTab: Int = 0
 
     @MainActor
@@ -69,6 +73,12 @@ struct SettingsView: View {
                         Label("Unassigned Faces", systemImage: "person.crop.circle.badge.questionmark")
                     }
                     .tag(3)
+
+                modelManagementTab
+                    .tabItem {
+                        Label("Model", systemImage: "cpu")
+                    }
+                    .tag(4)
             }
             .padding(16)
         }
@@ -96,6 +106,31 @@ struct SettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This will purge only temporary downsampled thumbnails from disk to free up space. Original photo files, library index data, face detections, ArcFace embeddings, and confirmed people are NOT deleted or affected. Thumbnails will be regenerated automatically when photos are viewed.")
+        }
+        .confirmationDialog(
+            "Clear Active Face Recognition Model?",
+            isPresented: $showConfirmClearModel
+        ) {
+            Button("Clear Model", role: .destructive) {
+                modelManager.clearModel()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will remove the installed model artifact from KeepSake's managed storage and switch face recognition to deterministic fallback mode. Your existing photos, albums, and confirmed people will NOT be deleted.")
+        }
+        .sheet(isPresented: $showModelInstructions) {
+            ModelInstructionsSheet()
+        }
+        .sheet(isPresented: $showOnboardingGuide) {
+            ModelSetupSheet(
+                selectedFolderURL: browserViewModel.selectedFolderURL,
+                onChooseFolder: {
+                    browserViewModel.chooseFolder()
+                },
+                onSetupCompleted: {
+                    showOnboardingGuide = false
+                }
+            )
         }
     }
 
@@ -138,6 +173,26 @@ struct SettingsView: View {
                 Text("Keepsake uses macOS kernel file-system events to watch for folder updates with ~0% idle CPU.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            Divider()
+
+            Section(header: Text("First-Launch Setup Guide").font(.headline)) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Onboarding & Setup Guide")
+                            .font(.subheadline)
+                        Text("Reopen the first-launch setup guide to select a photo folder or configure face recognition.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Open Setup Guide…") {
+                        showOnboardingGuide = true
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
             }
 
             Divider()
@@ -286,5 +341,230 @@ struct SettingsView: View {
                 selectedTab = 0
             }
         )
+    }
+
+    // MARK: - Tab 5: Model Management
+
+    private var modelManagementTab: some View {
+        Form {
+            Section(header: Text("Face Recognition Model Status").font(.headline)) {
+                HStack(spacing: 12) {
+                    statusIcon(for: modelManager.status)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(modelManager.status.displayText)
+                            .font(.headline)
+                        Text(statusSubtitle(for: modelManager.status))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if modelManager.isValidating {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+                .padding(.vertical, 4)
+
+                if case .ready(let name, let format, let url) = modelManager.status {
+                    LabeledContent("Active Model", value: name)
+                    LabeledContent("Format", value: format)
+                    LabeledContent("Architecture", value: "ArcFace / MobileFaceNet (512-D)")
+                    LabeledContent("Tensor Resolution", value: "112×112 RGB Planar")
+                    if let date = modelManager.installedDate {
+                        LabeledContent("Installed Date", value: date.formatted(date: .abbreviated, time: .shortened))
+                    }
+
+                    LabeledContent("Model Source", value: modelManager.modelSource.displayText)
+
+                    if case .userInstalled = modelManager.modelSource {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Storage Location:")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(url.path)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                                .truncationMode(.middle)
+                        }
+                        .padding(.vertical, 2)
+                    } else {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Development / Test Location:")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(url.path)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                                .truncationMode(.middle)
+                            Text("Note: This model is loaded from your development environment. It is not stored in user application support.")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+
+                if case .error(let message) = modelManager.status {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                        Text(message)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                if !modelManager.isModelReady {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("KeepSake is currently running in deterministic fallback mode (Legacy Synthetic 2D-DCT). Face clustering operates with lower discrimination until a compatible Core ML model is installed.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+
+            Divider()
+
+            if modelManager.status.isConverting {
+                Section(header: Text("Model Conversion Progress").font(.headline)) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text(modelManager.conversionMessage.isEmpty ? "Processing..." : modelManager.conversionMessage)
+                                .font(.subheadline)
+                            Spacer()
+                            Text("\(Int(modelManager.conversionProgress * 100))%")
+                                .font(.subheadline.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+
+                        ProgressView(value: modelManager.conversionProgress, total: 1.0)
+                            .progressViewStyle(.linear)
+
+                        Button("Cancel Conversion") {
+                            modelManager.cancelConversion()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .padding(.top, 4)
+                    }
+                    .padding(.vertical, 4)
+                }
+                Divider()
+            }
+
+            Section(header: Text("Model Management Controls").font(.headline)) {
+                HStack(spacing: 12) {
+                    Button(modelManager.hasUserInstalledModel ? "Replace with ONNX…" : "Choose ONNX Model…") {
+                        modelManager.chooseONNXModel()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(modelManager.isValidating || modelManager.status.isConverting)
+
+                    Button("Import Core ML…") {
+                        modelManager.chooseModel()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(modelManager.isValidating || modelManager.status.isConverting)
+
+                    if modelManager.isModelReady {
+                        Button("Validate & Reload") {
+                            Task {
+                                await modelManager.reloadActiveModel()
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(modelManager.isValidating || modelManager.status.isConverting)
+
+                        Button("Clear Model…") {
+                            showConfirmClearModel = true
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(modelManager.isValidating || modelManager.status.isConverting)
+                    }
+
+                    Spacer()
+
+                    Button("Setup Guide…") {
+                        showOnboardingGuide = true
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button("Model Instructions…") {
+                        showModelInstructions = true
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .padding(.vertical, 4)
+
+                Text("Choose your Buffalo S ONNX model (w600k_mbf.onnx). KeepSake converts it locally on your Mac into a native Core ML package without requiring external tools.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Divider()
+
+            Section(header: Text("Embedding Compatibility Notice").font(.headline)) {
+                Text("Each face embedding generated during photo scanning permanently records the active model name and version. If you switch models, existing confirmed people, names, and photo associations are kept completely intact. Newly scanned photos will be assigned embeddings using the new model.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(16)
+    }
+
+    @ViewBuilder
+    private func statusIcon(for status: ModelStatus) -> some View {
+        switch status {
+        case .ready:
+            Image(systemName: "checkmark.circle.fill")
+                .font(.title2)
+                .foregroundStyle(.green)
+        case .notInstalled, .fallbackActive:
+            Image(systemName: "info.circle.fill")
+                .font(.title2)
+                .foregroundStyle(.orange)
+        case .validating, .loading, .selected, .converting:
+            Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                .font(.title2)
+                .foregroundStyle(.blue)
+        case .error:
+            Image(systemName: "exclamationmark.octagon.fill")
+                .font(.title2)
+                .foregroundStyle(.red)
+        }
+    }
+
+    private func statusSubtitle(for status: ModelStatus) -> String {
+        switch status {
+        case .ready(let name, _, _):
+            if case .developmentBundle = modelManager.modelSource {
+                return "Development Bundle (Not User-Installed): \(name)"
+            }
+            return "Active and validated: \(name)"
+        case .notInstalled:
+            return "No external model configured. Running in Fallback Mode."
+        case .selected:
+            return "Artifact chosen; running validation checks."
+        case .converting(_, let message):
+            return message.isEmpty ? "Converting ONNX model to Core ML..." : message
+        case .validating:
+            return "Checking model inputs, output dimensions, and inference stability."
+        case .loading:
+            return "Initializing neural network into memory."
+        case .error:
+            return "Model validation or initialization failed."
+        case .fallbackActive:
+            return "Deterministic spatial fallback is actively handling recognition."
+        }
     }
 }

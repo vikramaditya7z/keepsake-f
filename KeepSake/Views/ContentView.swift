@@ -16,6 +16,8 @@ struct ContentView: View {
     @State private var selectedSection: AppNavigationSection = .photos
     @State private var showClusteringLab: Bool = false
     @State private var showSettingsSheet: Bool = false
+    @State private var showModelSetupSheet: Bool = false
+    @ObservedObject private var modelManager = ModelManager.shared
 
     init(viewModel: PhotoBrowserViewModel? = nil) {
         self.viewModel = viewModel ?? PhotoBrowserViewModel()
@@ -116,6 +118,17 @@ struct ContentView: View {
                 peopleViewModel: peopleViewModel
             )
         }
+        .sheet(isPresented: $showModelSetupSheet) {
+            ModelSetupSheet(
+                selectedFolderURL: viewModel.selectedFolderURL,
+                onChooseFolder: {
+                    viewModel.chooseFolder()
+                },
+                onSetupCompleted: {
+                    showModelSetupSheet = false
+                }
+            )
+        }
         .sheet(isPresented: $showClusteringLab, onDismiss: {
             Task {
                 await peopleViewModel.loadData(rootFolderURL: viewModel.selectedFolderURL)
@@ -129,6 +142,9 @@ struct ContentView: View {
             )
         }
         .onAppear {
+            if settings.shouldShowFirstLaunchOnboarding {
+                showModelSetupSheet = true
+            }
             Task {
                 await peopleViewModel.loadData(rootFolderURL: viewModel.selectedFolderURL)
             }

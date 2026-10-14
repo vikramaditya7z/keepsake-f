@@ -18,14 +18,30 @@ public final class DiskThumbnailCache: @unchecked Sendable {
             self.cacheDirectoryURL = custom
         } else {
             let baseCaches = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first!
-            self.cacheDirectoryURL = baseCaches.appendingPathComponent("com.keepsake.KeepSake/Thumbnails", isDirectory: true)
+            // Version 2 ensures any legacy blurry or unrotated thumbnails are completely invalidated
+            self.cacheDirectoryURL = baseCaches.appendingPathComponent("com.keepsake.KeepSake/Thumbnails/v2", isDirectory: true)
         }
         createDirectoryIfNeeded()
+        cleanupLegacyCacheIfNeeded()
     }
 
     private func createDirectoryIfNeeded() {
         if !fileManager.fileExists(atPath: cacheDirectoryURL.path) {
             try? fileManager.createDirectory(at: cacheDirectoryURL, withIntermediateDirectories: true, attributes: nil)
+        }
+    }
+
+    /// Safely purges legacy v1 thumbnail files located in the parent Thumbnails directory.
+    private func cleanupLegacyCacheIfNeeded() {
+        let parentURL = cacheDirectoryURL.deletingLastPathComponent()
+        guard parentURL.lastPathComponent == "Thumbnails" else { return }
+        ioQueue.async { [fileManager = self.fileManager] in
+            guard let contents = try? fileManager.contentsOfDirectory(at: parentURL, includingPropertiesForKeys: [.isDirectoryKey]) else { return }
+            for item in contents {
+                if item.pathExtension.lowercased() == "jpg" {
+                    try? fileManager.removeItem(at: item)
+                }
+            }
         }
     }
 
@@ -54,13 +70,23 @@ public final class DiskThumbnailCache: @unchecked Sendable {
 
     /// Saves a downsampled thumbnail image to disk.
     public func saveThumbnail(_ image: NSImage, for photoURL: URL) {
-        let fileURL = cacheFileURL(for: photoURL)
-        guard let tiffData = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiffData),
-              let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.82]) else {
+        let bitmap: NSBitmapImageRep?
+        if let rep = image.representations.first(where: { $0 is NSBitmapImageRep }) as? NSBitmapImageRep {
+            bitmap = rep
+        } else if let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            bitmap = NSBitmapImageRep(cgImage: cgImage)
+        } else if let tiffData = image.tiffRepresentation {
+            bitmap = NSBitmapImageRep(data: tiffData)
+        } else {
+            bitmap = nil
+        }
+
+        guard let validBitmap = bitmap,
+              let jpegData = validBitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.85]) else {
             return
         }
 
+        let fileURL = cacheFileURL(for: photoURL)
         ioQueue.async { [fileManager, cacheDirectoryURL] in
             if !fileManager.fileExists(atPath: cacheDirectoryURL.path) {
                 try? fileManager.createDirectory(at: cacheDirectoryURL, withIntermediateDirectories: true, attributes: nil)

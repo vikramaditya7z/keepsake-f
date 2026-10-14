@@ -1,216 +1,189 @@
-# KeepSake
+# KeepSake 📸
 
-<p align="center">
-  <img src="KeepSake/Resources/Assets.xcassets/AppIcon.appiconset/256.png" alt="KeepSake Logo" width="128" height="128" />
-</p>
+> **Native, Private, On-Device Face Recognition & Photo Organization for macOS**
 
-<p align="center">
-  <strong>Private, local-first macOS photo organization powered by on-device face recognition.</strong>
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/Platform-macOS%2014.0%2B-blue" alt="macOS 14+" />
-  <img src="https://img.shields.io/badge/Language-Swift%205.9%2B-orange" alt="Swift 5.9+" />
-  <img src="https://img.shields.io/badge/UI-SwiftUI%20%2F%20AppKit-purple" alt="SwiftUI" />
-  <img src="https://img.shields.io/badge/ML-Vision%20%2F%20Core%20ML-green" alt="Vision / Core ML" />
-  <img src="https://img.shields.io/badge/Privacy-100%25%20On--Device-success" alt="100% On-Device" />
-</p>
+KeepSake is a high-performance macOS photo management application that detects, indexes, and clusters faces directly on your Mac. Using Apple Vision for face detection, Core ML for neural feature extraction, and constrained hierarchical clustering, KeepSake organizes personal photo libraries into people and events with zero cloud dependency.
 
 ---
 
-## Overview
+## Download for macOS
 
-**KeepSake** is a native, local-first macOS application that helps you rediscover, browse, and organize your personal photo libraries by the people in them—without uploading a single pixel to the cloud.
+KeepSake is distributed as a universal standalone disk image (`.dmg`) for macOS:
 
-Modern cloud photo platforms frequently sacrifice privacy by streaming personal images to external servers for AI indexing. KeepSake takes the opposite approach: all photo scanning, face detection, neural embedding inference, similarity clustering, thumbnail caching, and identity management run strictly on your Mac, leveraging Apple Silicon, Core ML, and the Apple Vision framework.
+* 📦 **[Download KeepSake for macOS (DMG)](dist/KeepSake.dmg)**
+* 🚀 **[GitHub Releases & Release Notes](https://github.com/vikramaditya7z/keepsake-f/releases)**
+
+> [!NOTE]
+> **macOS Gatekeeper Notice**: Because KeepSake is independently distributed without an Apple Developer Program certificate, macOS Gatekeeper may present an *"unidentified developer"* prompt upon initial launch.
+>
+> To open KeepSake:
+> 1. Right-click (or Control-click) **KeepSake.app** in your `/Applications` folder.
+> 2. Select **Open** from the context menu, then click **Open** in the dialog.
+> 3. Alternatively, open **System Settings → Privacy & Security** and click **Open Anyway**.
 
 ---
 
-## Screenshots
+## First-Time Setup Guide
 
-> *Placeholder: Screenshots of the main application views.*
+Follow these six simple steps to get started with KeepSake:
 
-| Photos Gallery | People Overview |
-| :---: | :---: |
-| ![Photos Gallery View](docs/images/screenshot_photos_placeholder.png)<br>*(Browse original high-res photos with folder scoping)* | ![People Overview View](docs/images/screenshot_people_placeholder.png)<br>*(Confirmed identity gallery with custom cover photos)* |
+### Step 1: Install KeepSake
+1. Download `KeepSake.dmg`.
+2. Double-click the DMG to open it.
+3. Drag **KeepSake.app** into your **Applications** folder shortcut.
+4. Eject the disk image.
 
-| Candidate Suggestions Review | Settings Hub |
-| :---: | :---: |
-| ![Suggestions Review](docs/images/screenshot_suggestions_placeholder.png)<br>*(Semi-supervised candidate clusters with Cannot-Link enforcement)* | ![Settings Hub](docs/images/screenshot_settings_placeholder.png)<br>*(Disk thumbnail cache controls and recycle bin management)* |
+### Step 2: Launch the App
+Open **KeepSake.app** from `/Applications` (following the Gatekeeper notice above if prompted).
+
+### Step 3: Choose Your Photo Library
+When the app opens, click **Choose Folder** (or click the **+** button in the sidebar) and select any directory containing your photos (e.g. `~/Pictures` or an external drive). KeepSake accesses folders strictly with security-scoped bookmarks without modifying, moving, or re-encoding your original photos.
+
+### Step 4: Set Up the Face Recognition Model
+To recognize and cluster people across photos, KeepSake uses a MobileFaceNet ArcFace neural network. On first launch, KeepSake displays the **Model Setup** sheet:
+
+#### Option A: Automatic Local ONNX Conversion (Recommended)
+1. Download `buffalo_s.zip` from the [InsightFace v0.7.0 Release](https://github.com/deepinsight/insightface/releases/tag/v0.7).
+2. Unzip `buffalo_s.zip` and locate `w600k_mbf.onnx`.
+3. In KeepSake's setup window, click **Choose ONNX Model…** and select `w600k_mbf.onnx`.
+4. KeepSake converts the ONNX model locally using its bundled on-device converter, validates input/output tensors ($1 \times 3 \times 112 \times 112 \to 512\text{D}$), compiles it to Core ML, and installs it automatically into your Application Support directory.
+
+#### Option B: Manual Core ML Import
+If you already have a compiled `.mlpackage` or `.mlmodelc`, click **Import Core ML Model…** or configure it anytime under **Settings** (`Cmd + ,`) → **Model** tab.
+
+### Step 5: Automatic Scanning & Indexing
+Once the model is installed, KeepSake automatically:
+1. Discovers image files (`.jpg`, `.jpeg`, `.heic`, `.png`, `.tiff`).
+2. Detects facial bounding boxes using Apple Vision.
+3. Generates 512-dimensional face embeddings via Core ML.
+4. Performs constrained average-linkage clustering.
+
+### Step 6: Review & Organize People
+- **People Gallery**: Browse identified individuals with representative face avatars.
+- **Naming**: Click on any person to assign names or merge identities.
+- **Suggestion Queue**: Review candidate face matches with high confidence and accept or reject them with a single click.
 
 ---
 
 ## Key Features
 
-- **Folder-Scoped Browsing**: Select any folder on your Mac via native macOS security-scoped bookmarks. KeepSake scans and displays photos without moving or altering your files.
-- **On-Device Face Detection**: Discovers human faces using Apple's native Vision framework (`VNDetectFaceRectanglesRequest`), filtering out low-confidence or degenerate crops.
-- **Deep Face Recognition Pipeline**: Extracts 512-dimensional normalized facial feature vectors using an on-device ArcFace MobileFaceNet Core ML pipeline.
-- **Cannot-Link Safety Invariant**: Mathematically enforces that multiple faces appearing within the same photograph can never be grouped into the same identity cluster.
-- **Candidate Suggestion Workflow**: Groups similar unconfirmed faces into candidate identity groups for rapid user confirmation or reassignment.
-- **Unassigned Faces Management**: Browse unassigned face crops with single and bulk restoration to candidate suggestions.
-- **Two Distinct Recycle Bins**:
-  - *False Detections*: Non-face objects or artifacts removed from clustering.
-  - *Removed from People*: Valid faces detached from a person profile, eligible for reassignment or restoration.
-- **Custom Cover Photos**: Pick any face crop or assign a specific photo as the representative avatar for each confirmed person.
-- **Global Identity Memory**: Names and identity profiles persist globally across folder switches, automatically recognizing known individuals when you open new photo directories.
-- **Two-Tier Thumbnail Caching**: High-performance in-memory cache coupled with an on-disk JPEG thumbnail cache (`DiskThumbnailCache`) for smooth 60/120 fps scrolling.
-- **Native Photo Viewer**: Full-screen photo inspector with zoom, metadata, and a native **Show in Finder** shortcut (`NSWorkspace.shared.activateFileViewerSelecting`).
-- **100% Private & Non-Destructive**: Original images are accessed strictly read-only. No telemetry, no third-party network requests, and zero cloud uploads.
+- **🔒 100% On-Device & Private**: Zero network connections, zero telemetry, zero analytics. Your personal photos, embeddings, and metadata never leave your Mac.
+- **⚡ Native Apple Silicon & Intel Universal**: Built in Swift and SwiftUI, leveraging Apple Neural Engine (ANE), Metal GPU, and Accelerate framework.
+- **🧠 512-Dimensional Deep Embeddings**: Accurate face representation using MobileFaceNet ArcFace embeddings.
+- **🚫 Cannot-Link Constraint Enforcement**: Two faces detected within the same photo are mathematically prohibited from merging into the same person cluster, preventing false positive conflations.
+- **🖼️ Sharp, Orientation-Correct Thumbnails**: High-performance two-tier disk cache preserving EXIF orientation tags and rendering crisp Retina thumbnails.
+- **🔄 Live Folder Monitoring**: Uses FSEvents to track added, modified, or deleted photos in real time.
+- **💾 Safe, Isolated Storage**: Atomic JSON snapshots ensure library indices survive app crashes or power loss without database corruption.
 
 ---
 
-## Architecture & Data Flow
+## Architecture
 
-KeepSake is built in Swift using Structured Concurrency, actor isolation, and clean separation of concerns:
+KeepSake is built with a modular, service-oriented Swift architecture adhering to clean separation of concerns and Swift concurrency (`async`/`await` and `actor` isolation).
 
 ```mermaid
 flowchart TD
-    subgraph UI ["User Interface (SwiftUI & AppKit)"]
-        Nav[Sidebar Navigation]
-        PhotosView[Photos Gallery View]
-        PeopleView[People Gallery & Detail]
-        SuggestionsView[Suggestions Review Workflow]
-        SettingsView[Settings Hub & Cache Manager]
+    subgraph UI ["SwiftUI Interface"]
+        ContentView["ContentView (NavigationSplitView)"]
+        PeopleView["People & Suggestions Views"]
+        PhotoGrid["Photo Grid & Detail Inspector"]
+        ModelSheet["Model Setup & Settings Sheets"]
     end
 
-    subgraph Coord ["State Coordination"]
-        PBVM[PhotoBrowserViewModel]
-        PVM[PeopleViewModel]
+    subgraph Core ["Coordination & State Layer"]
+        Coordinator["LibraryProcessingCoordinator (@MainActor)"]
+        Queue["LibraryProcessingQueue (Actor-Isolated FIFO)"]
+        Store["LibraryStore (Atomic JSON Snapshot Persistence)"]
+        Settings["AppSettings (@AppStorage)"]
     end
 
     subgraph Pipeline ["Processing & Inference Pipeline"]
-        FScan[PhotoScannerService]
-        FQueue[actor LibraryProcessingQueue]
-        VDetection[FaceDetectionService - Apple Vision]
-        VEmbedding[ArcFaceRecognitionService - Core ML]
-        FCluster[FaceClusteringService - Average Linkage]
+        FolderMon["FolderMonitorService (FSEvents)"]
+        Vision["FaceDetectionService (Apple Vision)"]
+        CoreML["ArcFaceRecognitionService (Core ML 512D)"]
+        Clustering["FaceClusteringService (Average-Linkage + Cannot-Link)"]
+        Identity["IdentityService (Reconciliation & Merging)"]
+        Cache["DiskThumbnailCache (Two-Tier JPEG Cache)"]
     end
 
-    subgraph Storage ["Local Persistence & Caching"]
-        Store[actor LibraryStore - Snapshot JSON]
-        DiskCache[DiskThumbnailCache]
-        BookmarkMgr[BookmarkManager - Security Bookmarks]
+    subgraph Conversion ["On-Device Model Converter"]
+        ConverterService["ONNXConversionService"]
+        BundledBinary["keepsakemodelconverter (PyInstaller Helper)"]
+        ModelMgr["ModelManager (Validation & Compilation)"]
     end
 
-    Nav --> PBVM
-    Nav --> PVM
-    PhotosView --> PBVM
-    PeopleView --> PVM
-    SuggestionsView --> PVM
-    SettingsView --> PBVM
+    UI --> Core
+    Coordinator --> Queue
+    Coordinator --> Store
+    Queue --> Vision
+    Queue --> CoreML
+    CoreML --> Clustering
+    Clustering --> Identity
+    Coordinator --> Cache
+    FolderMon --> Coordinator
 
-    PBVM --> BookmarkMgr
-    PBVM --> FScan
-    FScan --> FQueue
-    FQueue --> VDetection
-    VDetection --> VEmbedding
-    VEmbedding --> FCluster
-    FCluster --> Store
-
-    Store --> PVM
-    Store --> PBVM
-    PhotosView --> DiskCache
+    ModelSheet --> ConverterService
+    ConverterService --> BundledBinary
+    BundledBinary --> ModelMgr
+    ModelMgr --> CoreML
 ```
 
-### Core Architecture Layers
+---
 
-1. **User Interface (SwiftUI & AppKit)**: Reactive macOS interface with dedicated views for Photos, People, Suggestions, Recycle Bin, and Settings.
-2. **Actor-Isolated Snapshot Store (`LibraryStore`)**: Manages atomic reads and writes of `library_index.json`, tracking photo records, face records, embeddings, and identity profiles.
-3. **Processing Queue (`LibraryProcessingQueue`)**: Bounded-concurrency background queue with dirty-checking (categorizes files as `NEW`, `CHANGED`, `UNCHANGED`, or `REMOVED`).
-4. **Computer Vision & Inference**:
-   - `FaceDetectionService`: Detects facial bounding boxes and landmarks via Vision.
-   - `ArcFaceRecognitionService`: Crops, aligns (112×112 RGB), normalizes $[-1.0, 1.0]$, and extracts 512-D hyperspherical embeddings via Core ML.
-5. **Clustering & Identity (`IdentityService`, `FaceClusteringService`)**: Pairwise cosine distance matrix computation, average-linkage clustering, centroid updates, and strict Cannot-Link conflict resolution.
+## Privacy & Local Data Storage
+
+KeepSake is strictly local-first. All application state is stored inside standard macOS application support directories:
+
+| Component | Path | Description |
+| :--- | :--- | :--- |
+| **Library Index** | `~/Library/Application Support/KeepSake/library_index.json` | Atomic JSON snapshot of photos, detected faces, embeddings, and identity clusters. |
+| **Installed Model** | `~/Library/Application Support/KeepSake/Models/` | Compiled Core ML face recognition package (`buffalo_s.mlpackage` / `.mlmodelc`). |
+| **Thumbnail Cache** | `~/Library/Caches/com.keepsake.KeepSake/Thumbnails/` | JPEG cached thumbnails at $160\text{px}$ and $400\text{px}$ for instantaneous scrolling. |
+| **Preferences** | `~/Library/Preferences/com.keepsake.KeepSake.plist` | User display and scan options managed via standard `UserDefaults`. |
+
+Your original photos are **never** copied, modified, tagged, or relocated.
 
 ---
 
-## Technology Stack
-
-| Component | Technology | Role |
-|---|---|---|
-| **Language** | Swift 5.9+ / Swift 6 Language Mode | Core application logic and concurrency |
-| **User Interface** | SwiftUI & AppKit | Native macOS interface, windows, and menus |
-| **Concurrency** | Swift Structured Concurrency | Actors (`LibraryStore`, `LibraryProcessingQueue`), async/await, Task groups |
-| **Face Detection** | Apple Vision Framework (`VNImageRequestHandler`) | Bounding box localization |
-| **Face Recognition** | Apple Core ML & Accelerate (vDSP) | Neural inference and vector L2-normalization |
-| **Persistence** | Foundation JSON & Atomic File I/O | Safe on-disk snapshot serialization |
-| **Filesystem Access** | AppKit & Security-Scoped Bookmarks | Sandboxed access to user-selected folders |
-| **External Packages** | **None** | Zero external dependencies; 100% native Apple frameworks |
-
----
-
-## Face-Recognition Model & Licensing
-
-KeepSake's facial recognition pipeline is designed around the **MobileFaceNet** architecture trained with **ArcFace (Additive Angular Margin Loss)**:
-
-- **Model Dimensions**: Input tensor $1 \times 3 \times 112 \times 112$ float32; output feature vector $1 \times 512$ float32.
-- **Evaluated Checkpoint**: The project evaluates the official InsightFace `buffalo_s` (`w600k_mbf.onnx`) checkpoint converted to Apple Core ML (`buffalo_s.mlmodelc`).
-- **Numerical Parity**: Tested at **0.999986 cosine similarity** between the ONNX source and Core ML FP16 representations.
-
-### Model Redistribution & Licensing Policy
-
-> [!IMPORTANT]
-> **Pretrained Model Weights Licensing**: Pretrained weights originating from the InsightFace `buffalo_s` / MS1MV3 dataset are distributed by their original authors for **non-commercial academic and personal research only**.
->
-> To comply with licensing guidelines and maintain repository safety:
-> 1. Raw binary model weights (`*.mlmodelc/`, `*.onnx`, `*.bin`) are **excluded from Git tracking** via `.gitignore`.
-> 2. The codebase includes a fully deterministic fallback pipeline (`Legacy Synthetic 2D-DCT Fallback`) so the application builds, runs, and passes all test suites even without binary model weights present.
-> 3. For personal testing with the neural model, developers can acquire and compile the Core ML program locally as documented in [`V3_MODEL_INTEGRATION_REPORT.md`](file:///Users/vikramaditya/Disk/Projects/KeepSake/V3_MODEL_INTEGRATION_REPORT.md).
-> 4. Future commercial distributions will use an open-weights architecture trained exclusively on permissive datasets (such as CASIA-WebFace or DigiFace-1M under Apache 2.0 / MIT).
-
----
-
-## Privacy & Data Handling
-
-KeepSake was engineered from inception to protect user privacy:
-
-- **Strictly Local Processing**: All detection, embedding generation, and grouping execute locally on your hardware.
-- **Zero Cloud Uploads**: Photos, metadata, names, and face embeddings are never transmitted to external servers.
-- **Non-Destructive**: Original photo files are opened in read-only mode. KeepSake never modifies, renames, moves, or deletes original photos.
-- **User-Controlled Folders**: Only folders explicitly granted access by the user through macOS Open panels are indexed.
-- **Segregated Storage**: Persistent library metadata is saved in Application Support, keeping application data cleanly separate from your photo storage.
-
----
-
-## Requirements
+## System Requirements
 
 - **Operating System**: macOS 14.0 (Sonoma) or later.
-- **Architecture**: Apple Silicon (M1/M2/M3/M4) recommended for Apple Neural Engine acceleration. Intel Macs running macOS 14.0+ are supported via CPU/GPU.
-- **Build Tools**: Xcode 15.0 or later (Swift 5.9+).
+- **Hardware**:
+  - Apple Silicon Mac (M1/M2/M3/M4) recommended for Apple Neural Engine acceleration.
+  - Intel Mac running macOS 14.0+ supported via CPU and Metal GPU inference.
+- **Build Tools** (for developers): Xcode 15.0 or later with macOS 14 SDK.
 
 ---
 
-## Build & Test Instructions
+## Developer & Build Instructions
 
-### 1. Clone the Repository
+### 1. Clone Repository
 
 ```bash
 git clone https://github.com/vikramaditya7z/keepsake-f.git
 cd keepsake-f
 ```
 
-### 2. Build the Application
-
-Build the Debug configuration using `xcodebuild`:
+### 2. Build Release Application
 
 ```bash
 xcodebuild \
   -project KeepSake.xcodeproj \
   -scheme KeepSake \
-  -configuration Debug \
+  -configuration Release \
   -derivedDataPath ./build/DerivedData \
   build
 ```
 
-The compiled application bundle will be located at:
-`build/DerivedData/Build/Products/Debug/KeepSake.app`
+The resulting `KeepSake.app` will be in:
+`build/DerivedData/Build/Products/Release/KeepSake.app`
 
-### 3. Run the Test Suite
+### 3. Run Test Suite
 
-Build the test bundle and execute the full test suite (216 automated tests covering concurrency, recovery, Cannot-Link constraints, clustering, and UI state):
+Run the full suite of automated unit and integration tests:
 
 ```bash
-# 1. Build the test bundle
+# 1. Build test bundle
 xcodebuild \
   -project KeepSake.xcodeproj \
   -scheme KeepSakeTests \
@@ -218,88 +191,24 @@ xcodebuild \
   -derivedDataPath ./build/DerivedData \
   build
 
-# 2. Execute unit tests
+# 2. Run unit tests
 xcrun xctest build/DerivedData/Build/Products/Debug/KeepSake.app/Contents/PlugIns/KeepSakeTests.xctest
 ```
 
----
+### 4. Create Distributable DMG
 
-## Project Structure
+Package the built Release app into a distributable disk image:
 
-```
-KeepSake/
-├── App/
-│   └── KeepSakeApp.swift              # App entry point, menu commands, and scene configuration
-├── Models/
-│   ├── DetectedFace.swift            # Face geometry and bounding box types
-│   ├── FaceEmbedding.swift           # Embedding vector structures
-│   ├── FaceGroup.swift               # Candidate cluster and person identity models
-│   ├── PersistedModels.swift         # Serializable snapshot models (v1/v2 schema)
-│   ├── PhotoItem.swift               # In-memory photo item representation
-│   └── UserFacingError.swift         # User-presentable error types
-├── Services/
-│   ├── ArcFaceRecognitionService.swift # Core ML MobileFaceNet inference service
-│   ├── BookmarkManager.swift         # Security-scoped URL persistence
-│   ├── DiskThumbnailCache.swift      # Two-tier disk thumbnail caching
-│   ├── FaceClusteringService.swift   # Average-linkage clustering & Cannot-Link enforcement
-│   ├── FaceDetectionService.swift    # Apple Vision face detection service
-│   ├── FolderMonitorService.swift    # FSEvents folder observation service
-│   ├── IdentityService.swift         # Multi-folder identity reconciliation & linking
-│   ├── LibraryProcessingCoordinator.swift # End-to-end scanning & processing coordinator
-│   ├── LibraryProcessingQueue.swift  # Actor-isolated bounded background worker queue
-│   ├── LibraryStore.swift            # Actor-isolated JSON snapshot persistence
-│   └── ThumbnailLoader.swift         # Asynchronous image and thumbnail loader
-├── ViewModels/
-│   ├── PeopleViewModel.swift         # People gallery, suggestion review & identity view model
-│   └── PhotoBrowserViewModel.swift   # Photo gallery, folder state & scanner view model
-├── Views/
-│   ├── ContentView.swift             # Main split-view navigation shell
-│   ├── PhotoDetailView.swift         # Full-screen photo inspector with Show in Finder
-│   ├── PhotoGridView.swift           # Lazy photo grid with dynamic scaling
-│   ├── SettingsView.swift            # Settings hub and cache controls
-│   ├── WelcomeView.swift             # Initial folder selection welcome state
-│   ├── People/                       # People gallery, detail, cards, and sheets
-│   └── Suggestions/                  # Candidate suggestion review queue
-└── Resources/
-    ├── Assets.xcassets               # App icons and accent colors
-    └── Info.plist                    # Bundle metadata configuration
+```bash
+bash build/scripts/create_dmg.sh
 ```
 
----
-
-## Known Limitations
-
-- **Face Crop Resolution**: Vision detection performs best on faces with dimensions $\ge 40 \times 40$ pixels; very distant background faces may not be registered.
-- **Model Licensing**: The evaluated `buffalo_s` weights are restricted to non-commercial evaluation. A permissively licensed open model will be integrated for commercial releases.
-- **Initial Library Scan**: The initial pass on collections with tens of thousands of images is compute-intensive; subsequent launches are instant due to hash-based dirty checking.
+This creates `dist/KeepSake.dmg` containing `KeepSake.app` and a convenient drag-and-drop `/Applications` folder shortcut.
 
 ---
 
-## Roadmap
+## Licensing & Acknowledgments
 
-- [ ] Standalone signed and notarized `.dmg` release distribution.
-- [ ] Integration of an Apache-2.0 / MIT licensed face recognition model trained on synthetic or open datasets.
-- [ ] EXIF-based temporal grouping and event co-occurrence clustering.
-- [ ] Video file scanning for keyframe face indexing.
-- [ ] Performance profiling and memory optimizations for libraries exceeding 100,000 photos.
-
----
-
-## Contributing
-
-Contributions, bug reports, and suggestions are welcome:
-
-1. **Issues**: Report bugs or feature requests via GitHub Issues with reproducible steps and macOS version details.
-2. **Pull Requests**:
-   - Fork the repository and create a feature branch.
-   - Ensure all 216 existing automated tests pass (`xcrun xctest ...`).
-   - Add regression tests for any new functionality or bug fixes.
-   - Maintain the 100% local-first, zero-telemetry architectural invariant.
-
----
-
-## License & Acknowledgments
-
-- **Application Code**: KeepSake source code is currently proprietary / all rights reserved pending formal open-source license selection.
-- **Machine Learning Checkpoints**: MobileFaceNet / ArcFace algorithms developed by the [InsightFace Project](https://github.com/deepinsight/insightface). Checkpoint weights retain their authors' non-commercial academic licensing.
-- **Apple Frameworks**: Built using Apple Vision, Core ML, Accelerate, and SwiftUI.
+- **KeepSake Application Code**: Released under the [MIT License](LICENSE).
+- **Third-Party Open-Source Components**: KeepSake bundles runtime dependencies including `onnx2coreml`, `coremltools`, `onnx`, `numpy`, `attrs`, and Python. Full notices and license texts are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- **Face Recognition Model Architecture**: Based on the MobileFaceNet / ArcFace algorithms developed by the [InsightFace Project](https://github.com/deepinsight/insightface). Checkpoint model weights (`buffalo_s` / `w600k_mbf.onnx`) are separate third-party research artifacts subject to the original creators' non-commercial academic license and are not hosted or distributed within this repository.

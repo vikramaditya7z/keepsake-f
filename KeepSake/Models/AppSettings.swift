@@ -32,5 +32,38 @@ final class AppSettings: ObservableObject {
         didSet { objectWillChange.send() }
     }
 
+    // MARK: - Onboarding & Model Management Settings
+
+    /// Tracks whether the user has seen, completed, or dismissed the first-launch onboarding flow.
+    @AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding: Bool = false {
+        didSet { objectWillChange.send() }
+    }
+
+    /// Tracks whether the user has seen or dismissed the first-launch model setup flow.
+    @AppStorage("hasCompletedModelSetup") var hasCompletedModelSetup: Bool = false {
+        didSet { objectWillChange.send() }
+    }
+
+    /// Determines whether the first-launch onboarding modal should appear automatically.
+    @MainActor
+    public var shouldShowFirstLaunchOnboarding: Bool {
+        return !hasCompletedOnboarding && !hasCompletedModelSetup && !ModelManager.shared.hasUserInstalledModel
+    }
+
+    /// User-visible display name of the currently active face-recognition model.
+    @AppStorage("activeModelDisplayName") var activeModelDisplayName: String = "" {
+        didSet { objectWillChange.send() }
+    }
+
+    /// Artifact format of the installed model (e.g., "Core ML Compiled (.mlmodelc)", "Core ML Package (.mlpackage)").
+    @AppStorage("activeModelFormat") var activeModelFormat: String = "" {
+        didSet { objectWillChange.send() }
+    }
+
+    /// Timestamp when the active model was validated and installed.
+    @AppStorage("activeModelInstalledDate") var activeModelInstalledDate: Double = 0.0 {
+        didSet { objectWillChange.send() }
+    }
+
     private init() {}
 }
