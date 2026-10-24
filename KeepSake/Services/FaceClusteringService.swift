@@ -73,237 +73,269 @@ struct CosineGraphClusteringService: FaceClusteringServiceProtocol {
         }
 
         return try await Task.detached(priority: .userInitiated) {
-            let startTime = ContinuousClock.now
+            try autoreleasepool {
+                let startTime = ContinuousClock.now
 
-            // Filter valid embeddings and validate dimensions
-            guard !embeddings.isEmpty else {
-                let metrics = ClusteringExecutionMetrics(
-                    executionTimeMs: 0.0,
-                    totalFaces: 0,
-                    totalGroups: 0,
-                    singletonGroups: 0,
-                    multiFaceGroups: 0,
-                    pairwiseComparisonCount: 0,
-                    threshold: threshold
-                )
-                return ([], metrics)
-            }
-
-            let expectedDim = embeddings[0].dimension
-            for emb in embeddings {
-                if emb.vector.isEmpty {
-                    throw FaceClusteringError.emptyEmbeddingVector
-                }
-                if emb.dimension != expectedDim {
-                    throw FaceClusteringError.invalidEmbeddingDimension(
-                        expected: expectedDim,
-                        actual: emb.dimension
+                // Filter valid embeddings and validate dimensions
+                guard !embeddings.isEmpty else {
+                    let metrics = ClusteringExecutionMetrics(
+                        executionTimeMs: 0.0,
+                        totalFaces: 0,
+                        totalGroups: 0,
+                        singletonGroups: 0,
+                        multiFaceGroups: 0,
+                        pairwiseComparisonCount: 0,
+                        threshold: threshold
                     )
+                    return ([], metrics)
                 }
-            }
 
-            let count = embeddings.count
-            var comparisonCount = 0
-
-            // 1. Compute pairwise similarity matrix (symmetric, diagonal = 1.0)
-            var similarityMatrix = [Float](repeating: 1.0, count: count * count)
-
-            for i in 0..<count {
-                for j in (i + 1)..<count {
-                    comparisonCount += 1
-                    let sim = EmbeddingSimilarityUtility.cosineSimilarity(
-                        embeddings[i].vector,
-                        embeddings[j].vector
-                    )
-                    similarityMatrix[i * count + j] = sim
-                    similarityMatrix[j * count + i] = sim
+                let expectedDim = embeddings[0].dimension
+                for emb in embeddings {
+                    if emb.vector.isEmpty {
+                        throw FaceClusteringError.emptyEmbeddingVector
+                    }
+                    if emb.dimension != expectedDim {
+                        throw FaceClusteringError.invalidEmbeddingDimension(
+                            expected: expectedDim,
+                            actual: emb.dimension
+                        )
+                    }
                 }
-            }
 
-            // 2. Perform Multi-Tier Cannot-Link Graph Agglomerative Clustering with Identity Manifold Safeguards
-            // Candidate edges connecting faces from DIFFERENT photos with similarity >= seedThreshold
-            struct CandidateEdge {
-                let sim: Float
-                let indexA: Int
-                let indexB: Int
-            }
+                let count = embeddings.count
+                var comparisonCount = 0
 
-            let seedThreshold = max(0.48, threshold - 0.04)
-            var candidateEdges: [CandidateEdge] = []
-            for i in 0..<count {
-                for j in (i + 1)..<count {
-                    let photoA = embeddings[i].photoURL.standardizedFileURL.path
-                    let photoB = embeddings[j].photoURL.standardizedFileURL.path
-                    // Cannot-Link constraint: faces from the same photo cannot have an edge
-                    if !photoA.isEmpty && !photoB.isEmpty && photoA == photoB {
+                // 1. Compute pairwise similarity matrix (symmetric, diagonal = 1.0)
+                var similarityMatrix = [Float](repeating: 1.0, count: count * count)
+
+                for i in 0..<count {
+                    for j in (i + 1)..<count {
+                        comparisonCount += 1
+                        let sim = EmbeddingSimilarityUtility.cosineSimilarity(
+                            embeddings[i].vector,
+                            embeddings[j].vector
+                        )
+                        similarityMatrix[i * count + j] = sim
+                        similarityMatrix[j * count + i] = sim
+                    }
+                }
+
+                // Pre-index unique photo URLs to integer identifiers once upfront (O(N)), avoiding
+                // millions of Foundation URL standardizations and string allocations in the O(N^2) loop.
+                var photoPathToId: [String: Int] = [:]
+                photoPathToId.reserveCapacity(count)
+                var nextPhotoId = 0
+                var photoIndices = [Int](repeating: -1, count: count)
+                for i in 0..<count {
+                    let path = embeddings[i].photoURL.standardizedFileURL.path
+                    if !path.isEmpty {
+                        if let id = photoPathToId[path] {
+                            photoIndices[i] = id
+                        } else {
+                            let id = nextPhotoId
+                            nextPhotoId += 1
+                            photoPathToId[path] = id
+                            photoIndices[i] = id
+                        }
+                    }
+                }
+
+                // 2. Perform Multi-Tier Cannot-Link Graph Agglomerative Clustering with Identity Manifold Safeguards
+                // Candidate edges connecting faces from DIFFERENT photos with similarity >= seedThreshold
+                struct CandidateEdge {
+                    let sim: Float
+                    let indexA: Int
+                    let indexB: Int
+                }
+
+                let seedThreshold = max(0.48, threshold - 0.04)
+                var candidateEdges: [CandidateEdge] = []
+                for i in 0..<count {
+                    for j in (i + 1)..<count {
+                        let photoIdA = photoIndices[i]
+                        let photoIdB = photoIndices[j]
+                        // Cannot-Link constraint: faces from the same photo cannot have an edge
+                        if photoIdA >= 0 && photoIdA == photoIdB {
+                            continue
+                        }
+                        let sim = similarityMatrix[i * count + j]
+                        if sim >= seedThreshold {
+                            candidateEdges.append(CandidateEdge(sim: sim, indexA: i, indexB: j))
+                        }
+                    }
+                }
+
+                // Sort edges by descending similarity for greedy maximum-similarity agglomeration
+                candidateEdges.sort { $0.sim > $1.sim }
+
+                var clusters: [[Int]] = (0..<count).map { [$0] }
+                var clusterPhotos: [Set<Int>] = (0..<count).map {
+                    let pId = photoIndices[$0]
+                    return pId >= 0 ? [pId] : []
+                }
+                var faceToClusterIndex: [Int] = Array(0..<count)
+
+                func computeCentroid(indices: [Int]) -> [Float] {
+                    var accum = [Float](repeating: 0.0, count: expectedDim)
+                    for idx in indices {
+                        let v = embeddings[idx].vector
+                        vDSP_vadd(accum, 1, v, 1, &accum, 1, vDSP_Length(expectedDim))
+                    }
+                    return EmbeddingSimilarityUtility.l2Normalize(accum)
+                }
+
+                for edge in candidateEdges {
+                    let cIdxA = faceToClusterIndex[edge.indexA]
+                    let cIdxB = faceToClusterIndex[edge.indexB]
+                    if cIdxA == cIdxB {
                         continue
                     }
-                    let sim = similarityMatrix[i * count + j]
-                    if sim >= seedThreshold {
-                        candidateEdges.append(CandidateEdge(sim: sim, indexA: i, indexB: j))
-                    }
-                }
-            }
 
-            // Sort edges by descending similarity for greedy maximum-similarity agglomeration
-            candidateEdges.sort { $0.sim > $1.sim }
+                    let clusterA = clusters[cIdxA]
+                    let clusterB = clusters[cIdxB]
 
-            var clusters: [[Int]] = (0..<count).map { [$0] }
-            var faceToClusterIndex: [Int] = Array(0..<count)
-
-            func computeCentroid(indices: [Int]) -> [Float] {
-                var accum = [Float](repeating: 0.0, count: expectedDim)
-                for idx in indices {
-                    let v = embeddings[idx].vector
-                    vDSP_vadd(accum, 1, v, 1, &accum, 1, vDSP_Length(expectedDim))
-                }
-                return EmbeddingSimilarityUtility.l2Normalize(accum)
-            }
-
-            for edge in candidateEdges {
-                let cIdxA = faceToClusterIndex[edge.indexA]
-                let cIdxB = faceToClusterIndex[edge.indexB]
-                if cIdxA == cIdxB {
-                    continue
-                }
-
-                let clusterA = clusters[cIdxA]
-                let clusterB = clusters[cIdxB]
-
-                // Cannot-Link Constraint:
-                // Faces detected in the same photograph represent distinct physical individuals.
-                // Clusters containing faces from the same photo cannot merge.
-                let photosA = Set(clusterA.compactMap { idx -> String? in
-                    let p = embeddings[idx].photoURL.standardizedFileURL.path
-                    return p.isEmpty ? nil : p
-                })
-                let photosB = Set(clusterB.compactMap { idx -> String? in
-                    let p = embeddings[idx].photoURL.standardizedFileURL.path
-                    return p.isEmpty ? nil : p
-                })
-                if !photosA.isEmpty && !photosB.isEmpty && !photosA.isDisjoint(with: photosB) {
-                    continue
-                }
-
-                // Identity Manifold Coherence & Transitive Drift Prevention:
-                // Verify that merging cluster B into cluster A maintains identity neighborhood coherence
-                let centA = computeCentroid(indices: clusterA)
-                let centB = computeCentroid(indices: clusterB)
-                let centSim = EmbeddingSimilarityUtility.cosineSimilarity(centA, centB)
-
-                // 1. Centroid coherence: clusters representing the same person must have close centroids
-                guard centSim >= 0.48 else {
-                    continue
-                }
-
-                // 2. Member-to-centroid coherence: merged centroid must hold all members tightly
-                let mergedIndices = clusterA + clusterB
-                let mergedCent = computeCentroid(indices: mergedIndices)
-                var memberCoherent = true
-                for idx in mergedIndices {
-                    let toCent = EmbeddingSimilarityUtility.cosineSimilarity(embeddings[idx].vector, mergedCent)
-                    if toCent < 0.42 {
-                        memberCoherent = false
-                        break
-                    }
-                }
-                guard memberCoherent else {
-                    continue
-                }
-
-                // 3. Transitive chain guard: for small clusters (<= 3 members), reject unreinforced chains where any pair < 0.48
-                if mergedIndices.count <= 3 {
-                    var minPairSim: Float = 1.0
-                    for a in 0..<mergedIndices.count {
-                        for b in (a + 1)..<mergedIndices.count {
-                            let s = similarityMatrix[mergedIndices[a] * count + mergedIndices[b]]
-                            if s < minPairSim { minPairSim = s }
-                        }
-                    }
-                    if minPairSim < 0.48 {
+                    // Cannot-Link Constraint:
+                    // Faces detected in the same photograph represent distinct physical individuals.
+                    // Clusters containing faces from the same photo cannot merge.
+                    let photosA = clusterPhotos[cIdxA]
+                    let photosB = clusterPhotos[cIdxB]
+                    if !photosA.isEmpty && !photosB.isEmpty && !photosA.isDisjoint(with: photosB) {
                         continue
                     }
-                } else {
-                    // For larger clusters, prevent extreme outliers (< 0.35)
-                    var minPairSim: Float = 1.0
-                    for a in 0..<mergedIndices.count {
-                        for b in (a + 1)..<mergedIndices.count {
-                            let s = similarityMatrix[mergedIndices[a] * count + mergedIndices[b]]
-                            if s < minPairSim { minPairSim = s }
-                        }
-                    }
-                    if minPairSim < 0.35 {
+
+                    // Identity Manifold Coherence & Transitive Drift Prevention:
+                    // Verify that merging cluster B into cluster A maintains identity neighborhood coherence
+                    let centA = computeCentroid(indices: clusterA)
+                    let centB = computeCentroid(indices: clusterB)
+                    let centSim = EmbeddingSimilarityUtility.cosineSimilarity(centA, centB)
+
+                    // 1. Centroid coherence: clusters representing the same person must have close centroids
+                    guard centSim >= 0.48 else {
                         continue
                     }
-                }
 
-                // Merge cluster B into cluster A
-                for idx in clusterB {
-                    faceToClusterIndex[idx] = cIdxA
-                }
-                clusters[cIdxA].append(contentsOf: clusterB)
-                clusters[cIdxB] = []
-            }
-
-            // Remove emptied clusters
-            clusters.removeAll { $0.isEmpty }
-
-            // Tier 3: Multi-Evidence Identity Expansion
-            // For any established multi-face identity (2+ faces across distinct photos),
-            // iteratively attach unassigned singleton faces that have strong centroid and anchor agreement
-            let attachmentThreshold = max(0.48, threshold - 0.06)
-            var expansionChanged = true
-            while expansionChanged {
-                expansionChanged = false
-                for cIdx in 0..<clusters.count {
-                    guard clusters[cIdx].count >= 2 else { continue }
-
-                    let cCentroid = computeCentroid(indices: clusters[cIdx])
-                    let cPhotos = Set(clusters[cIdx].compactMap { idx -> String? in
-                        let p = embeddings[idx].photoURL.standardizedFileURL.path
-                        return p.isEmpty ? nil : p
-                    })
-
-                    var bestCandIdx: Int? = nil
-                    var bestScore: Float = -1.0
-
-                    for candIdx in 0..<clusters.count {
-                        if candIdx == cIdx { continue }
-                        guard clusters[candIdx].count == 1 else { continue }
-
-                        let candFaceIdx = clusters[candIdx][0]
-                        let candPhoto = embeddings[candFaceIdx].photoURL.standardizedFileURL.path
-                        if !candPhoto.isEmpty && cPhotos.contains(candPhoto) {
-                            continue // Cannot-Link
+                    // 2. Member-to-centroid coherence: merged centroid must hold all members tightly
+                    let mergedIndices = clusterA + clusterB
+                    let mergedCent = computeCentroid(indices: mergedIndices)
+                    var memberCoherent = true
+                    for idx in mergedIndices {
+                        let toCent = EmbeddingSimilarityUtility.cosineSimilarity(embeddings[idx].vector, mergedCent)
+                        if toCent < 0.42 {
+                            memberCoherent = false
+                            break
                         }
+                    }
+                    guard memberCoherent else {
+                        continue
+                    }
 
-                        let candVec = embeddings[candFaceIdx].vector
-                        let toCent = EmbeddingSimilarityUtility.cosineSimilarity(candVec, cCentroid)
-
-                        var maxAnchor: Float = -2.0
-                        var minMember: Float = 2.0
-                        for mIdx in clusters[cIdx] {
-                            let s = similarityMatrix[candFaceIdx * count + mIdx]
-                            if s > maxAnchor { maxAnchor = s }
-                            if s < minMember { minMember = s }
-                        }
-
-                        if toCent >= attachmentThreshold && maxAnchor >= attachmentThreshold && minMember >= 0.38 {
-                            if toCent > bestScore {
-                                bestScore = toCent
-                                bestCandIdx = candIdx
+                    // 3. Transitive chain guard: for small clusters (<= 3 members), reject unreinforced chains where any pair < 0.48
+                    if mergedIndices.count <= 3 {
+                        var minPairSim: Float = 1.0
+                        for a in 0..<mergedIndices.count {
+                            for b in (a + 1)..<mergedIndices.count {
+                                let s = similarityMatrix[mergedIndices[a] * count + mergedIndices[b]]
+                                if s < minPairSim { minPairSim = s }
                             }
                         }
+                        if minPairSim < 0.48 {
+                            continue
+                        }
+                    } else {
+                        // For larger clusters, prevent extreme outliers (< 0.35)
+                        var minPairSim: Float = 1.0
+                        for a in 0..<mergedIndices.count {
+                            for b in (a + 1)..<mergedIndices.count {
+                                let s = similarityMatrix[mergedIndices[a] * count + mergedIndices[b]]
+                                if s < minPairSim { minPairSim = s }
+                            }
+                        }
+                        if minPairSim < 0.35 {
+                            continue
+                        }
                     }
 
-                    if let candToMerge = bestCandIdx {
-                        clusters[cIdx].append(contentsOf: clusters[candToMerge])
-                        clusters.remove(at: candToMerge)
-                        expansionChanged = true
-                        break
+                    // Merge cluster B into cluster A
+                    for idx in clusterB {
+                        faceToClusterIndex[idx] = cIdxA
+                    }
+                    clusters[cIdxA].append(contentsOf: clusterB)
+                    clusterPhotos[cIdxA].formUnion(clusterPhotos[cIdxB])
+                    clusters[cIdxB] = []
+                    clusterPhotos[cIdxB].removeAll()
+                }
+
+                // Remove emptied clusters
+                var validClusters: [[Int]] = []
+                var validClusterPhotos: [Set<Int>] = []
+                for idx in 0..<clusters.count {
+                    if !clusters[idx].isEmpty {
+                        validClusters.append(clusters[idx])
+                        validClusterPhotos.append(clusterPhotos[idx])
                     }
                 }
-            }
+                clusters = validClusters
+                clusterPhotos = validClusterPhotos
+
+                // Tier 3: Multi-Evidence Identity Expansion
+                // For any established multi-face identity (2+ faces across distinct photos),
+                // iteratively attach unassigned singleton faces that have strong centroid and anchor agreement
+                let attachmentThreshold = max(0.48, threshold - 0.06)
+                var expansionChanged = true
+                while expansionChanged {
+                    expansionChanged = false
+                    for cIdx in 0..<clusters.count {
+                        guard clusters[cIdx].count >= 2 else { continue }
+
+                        let cCentroid = computeCentroid(indices: clusters[cIdx])
+                        let cPhotos = clusterPhotos[cIdx]
+
+                        var bestCandIdx: Int? = nil
+                        var bestScore: Float = -1.0
+
+                        for candIdx in 0..<clusters.count {
+                            if candIdx == cIdx { continue }
+                            guard clusters[candIdx].count == 1 else { continue }
+
+                            let candFaceIdx = clusters[candIdx][0]
+                            let candPhotoId = photoIndices[candFaceIdx]
+                            if candPhotoId >= 0 && cPhotos.contains(candPhotoId) {
+                                continue // Cannot-Link
+                            }
+
+                            let candVec = embeddings[candFaceIdx].vector
+                            let toCent = EmbeddingSimilarityUtility.cosineSimilarity(candVec, cCentroid)
+
+                            var maxAnchor: Float = -2.0
+                            var minMember: Float = 2.0
+                            for mIdx in clusters[cIdx] {
+                                let s = similarityMatrix[candFaceIdx * count + mIdx]
+                                if s > maxAnchor { maxAnchor = s }
+                                if s < minMember { minMember = s }
+                            }
+
+                            if toCent >= attachmentThreshold && maxAnchor >= attachmentThreshold && minMember >= 0.38 {
+                                if toCent > bestScore {
+                                    bestScore = toCent
+                                    bestCandIdx = candIdx
+                                }
+                            }
+                        }
+
+                        if let candToMerge = bestCandIdx {
+                            let candFaceIdx = clusters[candToMerge][0]
+                            clusters[cIdx].append(contentsOf: clusters[candToMerge])
+                            if photoIndices[candFaceIdx] >= 0 {
+                                clusterPhotos[cIdx].insert(photoIndices[candFaceIdx])
+                            }
+                            clusters.remove(at: candToMerge)
+                            clusterPhotos.remove(at: candToMerge)
+                            expansionChanged = true
+                            break
+                        }
+                    }
+                }
 
             // 3. Sort clusters by size (largest first) for consistent developer inspection
             clusters.sort { $0.count > $1.count }
@@ -403,6 +435,7 @@ struct CosineGraphClusteringService: FaceClusteringServiceProtocol {
             )
 
             return (faceGroups, metrics)
+            }
         }.value
     }
 }

@@ -27,7 +27,7 @@ library_index.json
 *.onnx
 *.bin
 *.pth
-Models/
+/Models/
 
 # Distribution artifacts
 dist/*
@@ -52,3 +52,11 @@ MODEL_EVALUATION.md
 # Logs and crashes
 *.log
 *.crash
+
+# Test results and temporary files
+*.xcresult
+*.xcresult/
+*.tmp
+*.bak
+*.swp
+*~

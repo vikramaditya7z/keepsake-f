@@ -56,11 +56,6 @@ struct PeopleGalleryView: View {
         .task(id: rootFolderURL) {
             await viewModel.loadData(rootFolderURL: rootFolderURL)
         }
-        .onAppear {
-            Task {
-                await viewModel.loadData(rootFolderURL: rootFolderURL)
-            }
-        }
         .sheet(isPresented: $viewModel.showMergeSheet) {
             if let source = viewModel.personToMerge {
                 MergePeopleSheet(

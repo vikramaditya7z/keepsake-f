@@ -1082,7 +1082,18 @@ final class PeopleViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Helper
+    /// Clears all in-memory people, candidate groups, and unassigned faces.
+    func resetAllData() {
+        self.people = []
+        self.candidateGroups = []
+        self.unassignedFaces = []
+        self.selectedPerson = nil
+        self.selectedPersonPhotos = []
+        self.selectedPersonFaces = []
+        self.selectedPhotoForDetail = nil
+        self.errorMessage = nil
+        self.showErrorAlert = false
+    }
 
     private func showError(_ message: String) {
         self.errorMessage = message

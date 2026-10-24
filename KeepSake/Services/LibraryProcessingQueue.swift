@@ -300,6 +300,29 @@ actor LibraryProcessingQueue {
         notifyProgress()
     }
 
+    /// Cancels active processing, clears pending items, and cooperatively awaits completion of all active worker tasks.
+    func cancelAndAwait() async {
+        guard state == .processing || state == .paused else { return }
+        state = .cancelled
+        pendingItems.removeAll()
+        let tasks = activeWorkerTasks
+        activeWorkerTasks.removeAll()
+        for task in tasks {
+            task.cancel()
+        }
+
+        let continuations = self.pauseContinuations
+        self.pauseContinuations.removeAll()
+        for cont in continuations {
+            cont.resume()
+        }
+
+        for task in tasks {
+            _ = await task.result
+        }
+        notifyProgress()
+    }
+
     /// Resets the queue state to idle.
     func reset() {
         cancel()

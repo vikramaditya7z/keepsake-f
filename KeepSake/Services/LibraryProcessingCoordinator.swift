@@ -52,15 +52,28 @@ actor LibraryProcessingCoordinator {
         let photoURL = rootFolderURL.appendingPathComponent(photoRecord.relativePath)
 
         do {
-            try await libraryStore.updatePhotoState(id: photoRecord.id, state: .processing)
+            try Task.checkCancellation()
+            // In-memory update without full snapshot disk write
+            try await libraryStore.updatePhotoState(id: photoRecord.id, state: .processing, persistImmediately: false)
 
-            // Detect faces locally using Vision
-            let detectedFaces = try await faceDetector.detectFaces(in: photoURL)
+            try Task.checkCancellation()
+
+            // 1. Single decode of the source image respecting EXIF orientation
+            let orientedImage = try autoreleasepool {
+                try preprocessor.loadOrientedImage(from: photoURL)
+            }
+
+            try Task.checkCancellation()
+
+            // 2. Detect faces using the decoded image in memory
+            let detectedFaces = try await faceDetector.detectFaces(in: orientedImage)
             let existingExcluded = (await libraryStore.getExcludedFaces()).filter { $0.photoId == photoRecord.id }
             var faceRecords: [FaceRecord] = []
             var embeddingRecords: [EmbeddingRecord] = []
 
             for detected in detectedFaces {
+                try Task.checkCancellation()
+
                 let matchedExcluded = existingExcluded.first(where: {
                     let b1 = $0.boundingBox
                     let b2 = detected.boundingBox
@@ -85,11 +98,16 @@ actor LibraryProcessingCoordinator {
                     continue
                 }
 
-                // Crop or align face and extract 512-D ArcFace embedding with 5-point landmark alignment
-                if let crop = try? preprocessor.cropOrAlignFace(from: photoURL, normalizedBox: detected.boundingBox, landmarks: detected.landmarks) {
+                // 3. Crop or align face directly from the already decoded in-memory image
+                let crop: CGImage? = autoreleasepool {
+                    try? preprocessor.cropOrAlignFace(from: orientedImage, normalizedBox: detected.boundingBox, landmarks: detected.landmarks)
+                }
+
+                if let validCrop = crop {
+                    try Task.checkCancellation()
                     do {
                         let embedding = try await recognitionService.generateEmbedding(
-                            from: crop,
+                            from: validCrop,
                             photoURL: photoURL,
                             faceId: detected.id
                         )
@@ -99,34 +117,49 @@ actor LibraryProcessingCoordinator {
                             faceId: detected.id,
                             photoId: photoRecord.id,
                             vector: embedding.vector,
-                            modelName: recognitionService.modelName,
-                            modelVersion: "MobileFaceNet-512D-v1",
+                            modelName: embedding.modelName,
+                            modelVersion: embedding.modelName.contains("Fallback") ? "Synthetic-2D-DCT" : "MobileFaceNet-512D-v1",
                             inferenceTimeMs: embedding.inferenceTimeMs
                         )
                         embeddingRecords.append(embRecord)
+                    } catch is CancellationError {
+                        throw CancellationError()
                     } catch {
                         print("Embedding extraction failed for face \(detected.id): \(error.localizedDescription)")
                     }
                 }
             }
 
-            // Save atomic updates to persistent store
-            try await libraryStore.saveFaces(faceRecords, forPhotoId: photoRecord.id)
-            try await libraryStore.saveEmbeddings(embeddingRecords)
+            try Task.checkCancellation()
+
+            // Save updates to in-memory store without redundant intermediate disk writes
+            try await libraryStore.saveFaces(faceRecords, forPhotoId: photoRecord.id, persistImmediately: false)
+            try await libraryStore.saveEmbeddings(embeddingRecords, persistImmediately: false)
             try await libraryStore.updatePhotoState(
                 id: photoRecord.id,
                 state: .processed,
                 failureReason: nil,
-                detectedFacesCount: faceRecords.count
+                detectedFacesCount: faceRecords.count,
+                persistImmediately: false
             )
 
             return .success((facesCount: faceRecords.count, embeddingsCount: embeddingRecords.count))
+        } catch is CancellationError {
+            // Interrupted/cancelled by folder switch: reset to unindexed/needsProcessing so it's not stuck
+            try? await libraryStore.updatePhotoState(
+                id: photoRecord.id,
+                state: .needsReprocessing,
+                failureReason: "Cancelled due to folder switch",
+                persistImmediately: false
+            )
+            return .failure(CancellationError())
         } catch {
             let reason = error.localizedDescription
             try? await libraryStore.updatePhotoState(
                 id: photoRecord.id,
                 state: .failed,
-                failureReason: reason
+                failureReason: reason,
+                persistImmediately: false
             )
             return .failure(error)
         }
@@ -150,7 +183,9 @@ actor LibraryProcessingCoordinator {
             },
             onBatchComplete: { [weak self] in
                 guard let self = self else { return }
+                try? await self.libraryStore.flushPendingSaves()
                 try? await self.reclusterLibrary(rootFolderURL: rootFolderURL, threshold: clusteringThreshold)
+                try? await self.libraryStore.flushPendingSaves()
                 if let onComplete = onComplete {
                     await onComplete()
                 }
@@ -176,7 +211,9 @@ actor LibraryProcessingCoordinator {
             },
             onBatchComplete: { [weak self] in
                 guard let self = self else { return }
+                try? await self.libraryStore.flushPendingSaves()
                 try? await self.reclusterLibrary(rootFolderURL: rootFolderURL, threshold: clusteringThreshold)
+                try? await self.libraryStore.flushPendingSaves()
                 if let onComplete = onComplete {
                     await onComplete()
                 }
@@ -224,6 +261,7 @@ actor LibraryProcessingCoordinator {
         // 4. Update face groups across active embeddings
         progressHandler?("Clustering face groups…", 0.95)
         try await reclusterLibrary(rootFolderURL: folderURL, threshold: clusteringThreshold)
+        try await libraryStore.flushPendingSaves()
 
         progressHandler?("Library processing complete.", 1.0)
         return reconciliation
@@ -283,12 +321,14 @@ actor LibraryProcessingCoordinator {
         let faceToPhotoId = Dictionary(uniqueKeysWithValues: allFaces.map { ($0.id, $0.photoId) })
 
         // 3. Filter active embeddings in this folder
-        let allEmbeddings = (await libraryStore.getEmbeddings()).filter {
+        let rawFolderEmbeddings = (await libraryStore.getEmbeddings()).filter {
             activeFaceIdSet.contains($0.faceId) &&
             !excludedFaceIdSet.contains($0.faceId) &&
             !removedAssociationFaceIds.contains($0.faceId) &&
             activePhotoIdSet.contains($0.photoId)
         }
+        // Incompatible model safety: filter to compatible 512-D vectors
+        let allEmbeddings = rawFolderEmbeddings.filter { $0.dimension == 512 }
         guard !allEmbeddings.isEmpty else {
             let otherFolderGroups = existingGroups.filter { g in
                 if let gRoot = g.rootFolderPath {
@@ -598,6 +638,7 @@ actor LibraryProcessingCoordinator {
 
         struct CandidateCluster {
             var faceIds: [UUID]
+            var photoIds: Set<UUID>
             var vectors: [[Float]]
             var centroid: [Float]
             var anchors: [[Float]]
@@ -644,8 +685,10 @@ actor LibraryProcessingCoordinator {
                 maxAnchors: 4
             )
 
+            let candPhotoIds = Set(unassignedFaces.compactMap { faceToPhotoId[$0] })
             candidateClusters.append(CandidateCluster(
                 faceIds: unassignedFaces,
+                photoIds: candPhotoIds,
                 vectors: groupVectors,
                 centroid: clusterCentroid,
                 anchors: clusterAnchors,
@@ -670,7 +713,7 @@ actor LibraryProcessingCoordinator {
 
                 // Cannot-link check: candidate cluster cannot merge into profile if they share any photo
                 let profPhotos = Set(accum.memberFaceIds.compactMap { faceToPhotoId[$0] })
-                let candPhotos = Set(candidate.faceIds.compactMap { faceToPhotoId[$0] })
+                let candPhotos = candidate.photoIds
                 if !profPhotos.isDisjoint(with: candPhotos) {
                     continue
                 }
@@ -727,9 +770,7 @@ actor LibraryProcessingCoordinator {
                     let cB = candidateClusters[j]
 
                     // Cannot-link check: candidate clusters sharing a photo cannot merge
-                    let photosA = Set(cA.faceIds.compactMap { faceToPhotoId[$0] })
-                    let photosB = Set(cB.faceIds.compactMap { faceToPhotoId[$0] })
-                    if !photosA.isDisjoint(with: photosB) {
+                    if !cA.photoIds.isDisjoint(with: cB.photoIds) {
                         continue
                     }
 
@@ -793,6 +834,7 @@ actor LibraryProcessingCoordinator {
                 print("[DIAGNOSTIC] Stage 2 Agglomeration: Merging candidate cluster \(i) (\(cA.faceIds.count) faces) and candidate cluster \(j) (\(cB.faceIds.count) faces). Score=\(highestSim)")
 
                 cA.faceIds.append(contentsOf: cB.faceIds)
+                cA.photoIds.formUnion(cB.photoIds)
                 cA.vectors.append(contentsOf: cB.vectors)
 
                 // Recompute centroid

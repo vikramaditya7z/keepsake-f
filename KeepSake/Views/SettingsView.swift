@@ -17,6 +17,7 @@ struct SettingsView: View {
     @State private var diskCacheSizeText: String = "Calculating…"
     @State private var showConfirmClearCache: Bool = false
     @State private var showConfirmClearModel: Bool = false
+    @State private var showConfirmDeleteDatabase: Bool = false
     @State private var showModelInstructions: Bool = false
     @State private var showOnboardingGuide: Bool = false
     @State private var selectedTab: Int = 0
@@ -115,8 +116,19 @@ struct SettingsView: View {
                 modelManager.clearModel()
             }
             Button("Cancel", role: .cancel) {}
+        }
+        .confirmationDialog(
+            "Delete Library Database?",
+            isPresented: $showConfirmDeleteDatabase
+        ) {
+            Button("Delete Library Database", role: .destructive) {
+                Task {
+                    await browserViewModel.deleteLibraryDatabase(peopleViewModel: peopleViewModel)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This will remove the installed model artifact from KeepSake's managed storage and switch face recognition to deterministic fallback mode. Your existing photos, albums, and confirmed people will NOT be deleted.")
+            Text("This will permanently remove all indexed photo records, detected faces, embeddings, and saved people from KeepSake. Your original photo files and installed recognition models will NOT be deleted. The library must be indexed again.")
         }
         .sheet(isPresented: $showModelInstructions) {
             ModelInstructionsSheet()
@@ -254,7 +266,15 @@ struct SettingsView: View {
 
             Section(header: Text("Persistent Library Database").font(.headline)) {
                 LabeledContent("Persistent Storage", value: "Application Support/KeepSake/library_index.json")
-                LabeledContent("Indexed Embeddings", value: "\(browserViewModel.totalStoredEmbeddings)")
+
+                if browserViewModel.selectedFolderURL != nil {
+                    LabeledContent("Active Folder Photos", value: "\(browserViewModel.totalIndexedPhotos)")
+                    LabeledContent("Active Folder Faces", value: "\(browserViewModel.totalDetectedFaces)")
+                    LabeledContent("Active Folder Embeddings", value: "\(browserViewModel.activeFolderEmbeddingsCount)")
+                }
+
+                LabeledContent("Total Stored Photos", value: "\(browserViewModel.totalStoredPhotos)")
+                LabeledContent("Total Stored Embeddings", value: "\(browserViewModel.totalStoredEmbeddings)")
                 LabeledContent("Indexed People Profiles", value: "\(browserViewModel.totalStoredGroups)")
 
                 if browserViewModel.failedPhotosCount > 0 {
@@ -263,7 +283,7 @@ struct SettingsView: View {
                             Text("\(browserViewModel.failedPhotosCount) photos failed processing")
                                 .font(.subheadline)
                                 .foregroundStyle(.red)
-                            Text("Retry corrupted or interrupted photos.")
+                            Text("Retry corrupted or interrupted photos in active folder.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -276,6 +296,19 @@ struct SettingsView: View {
                     }
                     .padding(.vertical, 4)
                 }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Button("Delete Library Database…") {
+                        showConfirmDeleteDatabase = true
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Text("Remove all indexed photo records, detected faces, embeddings, and saved people from KeepSake. Your original photos and installed recognition models will not be deleted. The library must be indexed again.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.top, 4)
             }
 
             Divider()

@@ -95,6 +95,51 @@ public final class DiskThumbnailCache: @unchecked Sendable {
         }
     }
 
+    /// Computes a deterministic cache file path for a cropped face thumbnail.
+    public func cacheFileURL(forFaceId faceId: UUID) -> URL {
+        let facesDir = cacheDirectoryURL.appendingPathComponent("faces", isDirectory: true)
+        return facesDir.appendingPathComponent("\(faceId.uuidString).jpg", isDirectory: false)
+    }
+
+    /// Loads a cached cropped face thumbnail from disk if available.
+    public func getFaceCrop(forFaceId faceId: UUID) -> NSImage? {
+        let fileURL = cacheFileURL(forFaceId: faceId)
+        guard fileManager.fileExists(atPath: fileURL.path) else { return nil }
+        guard let data = try? Data(contentsOf: fileURL, options: .mappedIfSafe),
+              let image = NSImage(data: data) else {
+            return nil
+        }
+        return image
+    }
+
+    /// Saves a cropped face thumbnail image to disk.
+    public func saveFaceCrop(_ image: NSImage, forFaceId faceId: UUID) {
+        let bitmap: NSBitmapImageRep?
+        if let rep = image.representations.first(where: { $0 is NSBitmapImageRep }) as? NSBitmapImageRep {
+            bitmap = rep
+        } else if let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            bitmap = NSBitmapImageRep(cgImage: cgImage)
+        } else if let tiffData = image.tiffRepresentation {
+            bitmap = NSBitmapImageRep(data: tiffData)
+        } else {
+            bitmap = nil
+        }
+
+        guard let validBitmap = bitmap,
+              let jpegData = validBitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.85]) else {
+            return
+        }
+
+        let fileURL = cacheFileURL(forFaceId: faceId)
+        let facesDir = fileURL.deletingLastPathComponent()
+        ioQueue.async { [fileManager] in
+            if !fileManager.fileExists(atPath: facesDir.path) {
+                try? fileManager.createDirectory(at: facesDir, withIntermediateDirectories: true, attributes: nil)
+            }
+            try? jpegData.write(to: fileURL, options: .atomic)
+        }
+    }
+
     /// Measures the total size in bytes consumed by thumbnail cache files on disk.
     public func calculateCacheSize() -> Int64 {
         guard let enumerator = fileManager.enumerator(

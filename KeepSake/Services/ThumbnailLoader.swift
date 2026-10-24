@@ -6,17 +6,34 @@ import ImageIO
 /// Features:
 /// - Fast synchronous in-memory NSCache check (0ms display for visible items).
 /// - Second-level persistent on-disk thumbnail cache (DiskThumbnailCache).
-/// - Concurrent background decoding utilizing multi-core Apple Silicon without blocking the UI.
+/// - Bounded memory usage with image byte-cost limits and system memory pressure eviction.
+/// - Cooperative task cancellation support.
 public final class ThumbnailLoader: @unchecked Sendable {
     public static let shared = ThumbnailLoader()
 
     private let memoryCache = NSCache<NSURL, NSImage>()
     private let diskCache: DiskThumbnailCache
+    private var memoryPressureSource: DispatchSourceMemoryPressure?
 
     public init(diskCache: DiskThumbnailCache = .shared) {
         self.diskCache = diskCache
-        memoryCache.countLimit = 1500
-        memoryCache.totalCostLimit = 512 * 1024 * 1024 // 512 MB memory limit
+        memoryCache.countLimit = 800
+        memoryCache.totalCostLimit = 256 * 1024 * 1024 // 256 MB memory limit
+
+        setupMemoryPressureListener()
+    }
+
+    deinit {
+        memoryPressureSource?.cancel()
+    }
+
+    private func setupMemoryPressureListener() {
+        let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: DispatchQueue.global(qos: .utility))
+        source.setEventHandler { [weak self] in
+            self?.clearMemoryCache()
+        }
+        source.resume()
+        self.memoryPressureSource = source
     }
 
     /// Fast synchronous check for an in-memory cached thumbnail.
@@ -43,37 +60,49 @@ public final class ThumbnailLoader: @unchecked Sendable {
             return diskCached
         }
 
-        // Concurrent background decoding
+        guard !Task.isCancelled else { return nil }
+
+        // Background decoding with cooperative cancellation
         return await Task.detached(priority: .userInitiated) { [weak self, memoryCache = self.memoryCache, diskCache = self.diskCache] () -> NSImage? in
-            // Retina display sharpness: 2x scale factor, with a minimum dimension of 640px
-            let maxPixelSize = max(Int(max(targetSize.width, targetSize.height) * 2), 640)
+            guard !Task.isCancelled else { return nil }
 
-            // Always decode thumbnail from full image data with orientation transform applied.
-            // This prevents blurry and sideways thumbnails caused by unrotated embedded EXIF previews.
-            let options: [CFString: Any] = [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceShouldCacheImmediately: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
-            ]
+            return autoreleasepool {
+                // Retina display sharpness: 2x scale factor, with a minimum dimension of 640px
+                let maxPixelSize = max(Int(max(targetSize.width, targetSize.height) * 2), 640)
 
-            guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
-                  let finalCGImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
-                return nil
+                // Always decode thumbnail from full image data with orientation transform applied.
+                // This prevents blurry and sideways thumbnails caused by unrotated embedded EXIF previews.
+                let options: [CFString: Any] = [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+                ]
+
+                guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
+                      let finalCGImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
+                    return nil
+                }
+
+                guard !Task.isCancelled else { return nil }
+
+                let nsImage = NSImage(cgImage: finalCGImage, size: NSSize(width: finalCGImage.width, height: finalCGImage.height))
+                let cost = finalCGImage.bytesPerRow * finalCGImage.height
+                memoryCache.setObject(nsImage, forKey: url as NSURL, cost: cost)
+                diskCache.saveThumbnail(nsImage, for: url)
+
+                return nsImage
             }
-
-            let nsImage = NSImage(cgImage: finalCGImage, size: NSSize(width: finalCGImage.width, height: finalCGImage.height))
-            let cost = finalCGImage.bytesPerRow * finalCGImage.height
-            memoryCache.setObject(nsImage, forKey: url as NSURL, cost: cost)
-            diskCache.saveThumbnail(nsImage, for: url)
-
-            return nsImage
         }.value
     }
 
     /// Loads full image for the detail viewer.
     public func loadFullImage(for url: URL, maxDimension: CGFloat = 2560) async -> NSImage? {
+        guard !Task.isCancelled else { return nil }
+
         return await Task.detached(priority: .userInitiated) { () -> NSImage? in
+            guard !Task.isCancelled else { return nil }
+
             let options: [CFString: Any] = [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceShouldCacheImmediately: true,
@@ -85,6 +114,8 @@ public final class ThumbnailLoader: @unchecked Sendable {
                   let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
                 return nil
             }
+
+            guard !Task.isCancelled else { return nil }
 
             return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
         }.value

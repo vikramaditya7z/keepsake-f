@@ -183,13 +183,10 @@ struct FacePreprocessingService: Sendable {
         return try cropFace(from: cgImage, normalizedBox: normalizedBox, marginFactor: marginFactor)
     }
 
-    /// Loads an image from disk respecting EXIF orientation and crops or aligns the specified detected face.
-    func cropOrAlignFace(
-        from imageURL: URL,
-        normalizedBox: CGRect,
-        landmarks: FaceLandmarks5Point?,
-        marginFactor: CGFloat = 0.15
-    ) throws -> CGImage {
+    /// Loads an image from disk respecting EXIF orientation.
+    /// Can be decoded once and reused for detecting faces and extracting multiple face crops.
+    /// - Parameter maxDimension: Optional max pixel size to bound decoding dimensions and reduce RAM usage.
+    func loadOrientedImage(from imageURL: URL, maxDimension: Int? = nil) throws -> CGImage {
         guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, nil) else {
             throw PreprocessingError.unreadableImageSource(imageURL)
         }
@@ -201,17 +198,64 @@ struct FacePreprocessingService: Sendable {
             maxDim = max(width, height)
         }
 
+        let effectiveMaxDim: Int
+        if let targetMax = maxDimension, targetMax > 0 {
+            effectiveMaxDim = min(maxDim, targetMax)
+        } else {
+            effectiveMaxDim = maxDim
+        }
+
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceShouldCacheImmediately: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxDim
+            kCGImageSourceThumbnailMaxPixelSize: effectiveMaxDim
         ]
 
         guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
             throw PreprocessingError.unreadableImageSource(imageURL)
         }
 
+        return cgImage
+    }
+
+    /// Loads an image downsampled appropriately for face crop thumbnail display, avoiding full-resolution decodes.
+    /// - Parameters:
+    ///   - imageURL: Path to source photo on disk.
+    ///   - normalizedBox: Vision normalized bounding box [0, 1].
+    ///   - targetDisplaySize: Desired thumbnail display pixel dimension (e.g. 220 for a 110pt Retina avatar).
+    ///   - marginFactor: Contextual padding around face box.
+    func cropThumbnailFace(
+        from imageURL: URL,
+        normalizedBox: CGRect,
+        targetDisplaySize: CGFloat = 220,
+        marginFactor: CGFloat = 0.15
+    ) throws -> CGImage {
+        guard normalizedBox.width > 0, normalizedBox.height > 0 else {
+            throw PreprocessingError.emptyFaceRegion
+        }
+
+        // Calculate appropriate source decode dimension:
+        // A face with relative dimension max(w, h) needs targetDisplaySize pixels.
+        // Clamp to safe range [640, 1920] to guarantee crisp Retina rendering while never decoding 4000-8000px originals.
+        let faceBoxMax = max(normalizedBox.width, normalizedBox.height)
+        let estimatedDim = Int(ceil(targetDisplaySize / max(faceBoxMax, 0.08)))
+        let downsampleMaxDim = min(max(estimatedDim, 640), 1920)
+
+        let cgImage = try autoreleasepool {
+            try loadOrientedImage(from: imageURL, maxDimension: downsampleMaxDim)
+        }
+        return try cropFace(from: cgImage, normalizedBox: normalizedBox, marginFactor: marginFactor)
+    }
+
+    /// Loads an image from disk respecting EXIF orientation and crops or aligns the specified detected face.
+    func cropOrAlignFace(
+        from imageURL: URL,
+        normalizedBox: CGRect,
+        landmarks: FaceLandmarks5Point?,
+        marginFactor: CGFloat = 0.15
+    ) throws -> CGImage {
+        let cgImage = try loadOrientedImage(from: imageURL)
         return try cropOrAlignFace(from: cgImage, normalizedBox: normalizedBox, landmarks: landmarks, marginFactor: marginFactor)
     }
 

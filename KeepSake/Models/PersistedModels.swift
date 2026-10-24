@@ -588,13 +588,32 @@ struct LibraryReconciliationResult: Sendable {
     let changedPhotos: [PhotoRecord]
     let unchangedPhotos: [PhotoRecord]
     let removedPhotos: [PhotoRecord]
+    let unindexedPhotos: [PhotoRecord]
+
+    init(
+        newPhotos: [PhotoRecord],
+        changedPhotos: [PhotoRecord],
+        unchangedPhotos: [PhotoRecord],
+        removedPhotos: [PhotoRecord],
+        unindexedPhotos: [PhotoRecord] = []
+    ) {
+        self.newPhotos = newPhotos
+        self.changedPhotos = changedPhotos
+        self.unchangedPhotos = unchangedPhotos
+        self.removedPhotos = removedPhotos
+        self.unindexedPhotos = unindexedPhotos
+    }
 
     var totalIndexed: Int {
         return newPhotos.count + changedPhotos.count + unchangedPhotos.count
     }
 
+    var pendingPhotos: [PhotoRecord] {
+        return newPhotos + changedPhotos + unindexedPhotos
+    }
+
     var requiresProcessingCount: Int {
-        return newPhotos.count + changedPhotos.count
+        return pendingPhotos.count
     }
 }
 

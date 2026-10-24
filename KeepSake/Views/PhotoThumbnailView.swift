@@ -65,6 +65,7 @@ struct PhotoThumbnailView: View {
                 }
                 isLoading = true
                 let image = await ThumbnailLoader.shared.loadThumbnail(for: photo.url)
+                guard !Task.isCancelled else { return }
                 self.thumbnail = image
                 self.isLoading = false
             }

@@ -20,7 +20,10 @@ final class PhotoBrowserViewModel: ObservableObject {
     @Published var processedPhotosCount: Int = 0
     @Published var failedPhotosCount: Int = 0
     @Published var totalDetectedFaces: Int = 0
+    @Published var activeFolderEmbeddingsCount: Int = 0
     @Published var totalStoredEmbeddings: Int = 0
+    @Published var totalStoredPhotos: Int = 0
+    @Published var totalStoredFaces: Int = 0
     @Published var totalStoredGroups: Int = 0
     @Published var activeFolderPeopleCount: Int = 0
     @Published var isRestoringBookmark: Bool = false
@@ -173,8 +176,9 @@ final class PhotoBrowserViewModel: ObservableObject {
         processedPhotosCount = 0
         failedPhotosCount = 0
         totalDetectedFaces = 0
+        activeFolderEmbeddingsCount = 0
         Task { [weak self] in
-            await self?.coordinator.queue.cancel()
+            await self?.coordinator.queue.cancelAndAwait()
         }
     }
 
@@ -196,6 +200,11 @@ final class PhotoBrowserViewModel: ObservableObject {
 
     /// Directly opens and indexes a directory (e.g. from drag & drop or bookmarks).
     func openFolderDirectly(url: URL) {
+        // Prevent duplicate pipeline starts if the same folder is re-selected while active
+        if let current = selectedFolderURL, current.standardizedFileURL.path == url.standardizedFileURL.path, !photos.isEmpty {
+            return
+        }
+
         // Stop previous security scoped access & monitor
         if let oldURL = selectedFolderURL {
             folderMonitor.stopMonitoring()
@@ -212,6 +221,7 @@ final class PhotoBrowserViewModel: ObservableObject {
         processedPhotosCount = 0
         failedPhotosCount = 0
         totalDetectedFaces = 0
+        activeFolderEmbeddingsCount = 0
 
         // Start new access and create persistent bookmark
         _ = bookmarkManager.startAccessing(url: url)
@@ -329,8 +339,8 @@ final class PhotoBrowserViewModel: ObservableObject {
 
             await self.refreshLibraryStats(reconciliation: reconciliation)
 
-            // 3. Dynamically enqueue new / changed photos into existing processing pipeline
-            let pendingPhotos = reconciliation.newPhotos + reconciliation.changedPhotos
+            // 3. Dynamically enqueue new / changed / unindexed photos into existing processing pipeline
+            let pendingPhotos = reconciliation.pendingPhotos
             if !pendingPhotos.isEmpty {
                 await self.coordinator.enqueueBackgroundPhotos(
                     photos: pendingPhotos,
@@ -399,8 +409,9 @@ final class PhotoBrowserViewModel: ObservableObject {
 
         scanTask = Task { [weak self] in
             guard let self = self else { return }
-            // Cancel any in-flight background queue work from a previous folder
-            await self.coordinator.queue.cancel()
+            // Cooperatively cancel and cleanly await in-flight background queue work from previous folder
+            await self.coordinator.queue.cancelAndAwait()
+            try? await self.libraryStore.flushPendingSaves()
 
             guard !Task.isCancelled,
                   self.activeFolderGeneration == generation,
@@ -441,8 +452,8 @@ final class PhotoBrowserViewModel: ObservableObject {
 
                 await self.refreshLibraryStats(reconciliation: reconciliation)
 
-                // Auto-start background processing for new/changed photos
-                let pendingPhotos = reconciliation.newPhotos + reconciliation.changedPhotos
+                // Auto-start background processing for new/changed/unindexed photos
+                let pendingPhotos = reconciliation.pendingPhotos
                 if !pendingPhotos.isEmpty {
                     await self.coordinator.startBackgroundProcessing(
                         photos: pendingPhotos,
@@ -480,17 +491,22 @@ final class PhotoBrowserViewModel: ObservableObject {
     func refreshLibraryStats(reconciliation: LibraryReconciliationResult? = nil) async {
         let allEmbeddings = await libraryStore.getEmbeddings()
         let allGroups = await libraryStore.getGroups()
+        let allPhotos = await libraryStore.getAllPhotos()
+        let allFaces = await libraryStore.getAllFaces()
         let metadata = await libraryStore.getMetadata()
 
         self.libraryMetadata = metadata
         self.totalStoredEmbeddings = allEmbeddings.count
         self.totalStoredGroups = allGroups.count
+        self.totalStoredPhotos = allPhotos.count
+        self.totalStoredFaces = allFaces.count
 
         guard let activeFolderURL = selectedFolderURL else {
             self.totalIndexedPhotos = 0
             self.processedPhotosCount = 0
             self.failedPhotosCount = 0
             self.totalDetectedFaces = 0
+            self.activeFolderEmbeddingsCount = 0
             self.newPhotosCount = 0
             self.changedPhotosCount = 0
             self.activeFolderPeopleCount = 0
@@ -498,21 +514,21 @@ final class PhotoBrowserViewModel: ObservableObject {
         }
 
         let targetRoot = activeFolderURL.standardizedFileURL.path
-        let allPhotos = await libraryStore.getAllPhotos()
         let folderPhotos = allPhotos.filter { photo in
             guard let root = photo.rootFolderPath else { return true }
             return URL(fileURLWithPath: root).standardizedFileURL.path == targetRoot
         }
         let folderPhotoIds = Set(folderPhotos.map { $0.id })
-        let allFaces = await libraryStore.getAllFaces()
         let folderFaces = allFaces.filter { folderPhotoIds.contains($0.photoId) }
+        let folderFaceIds = Set(folderFaces.map { $0.id })
+        let folderEmbeddings = allEmbeddings.filter { folderFaceIds.contains($0.faceId) || folderPhotoIds.contains($0.photoId) }
 
         self.totalIndexedPhotos = folderPhotos.count
         self.processedPhotosCount = folderPhotos.filter { $0.processingState == .processed }.count
         self.failedPhotosCount = folderPhotos.filter { $0.processingState == .failed }.count
         self.totalDetectedFaces = folderFaces.count
+        self.activeFolderEmbeddingsCount = folderEmbeddings.count
 
-        let folderFaceIds = Set(folderFaces.map { $0.id })
         let confirmedPeople = await libraryStore.getAllPeople().filter { !$0.isDeactivated }
         self.activeFolderPeopleCount = confirmedPeople.filter { person in
             person.confirmedFaceIds.contains { folderFaceIds.contains($0) }
@@ -549,15 +565,69 @@ final class PhotoBrowserViewModel: ObservableObject {
 
     func retryFailedPhotos() {
         guard let folderURL = selectedFolderURL else { return }
+        let normalizedRoot = folderURL.standardizedFileURL.path
         Task {
-            let failedPhotos = await libraryStore.getPhotos(byState: .failed)
-            for photo in failedPhotos {
+            let allFailed = await libraryStore.getPhotos(byState: .failed, rootFolderPath: normalizedRoot)
+            for photo in allFailed {
                 try? await libraryStore.updatePhotoState(id: photo.id, state: .needsReprocessing, failureReason: nil)
             }
-            let retryable = await libraryStore.getPhotos(byState: .needsReprocessing)
+            let retryable = await libraryStore.getPhotos(byState: .needsReprocessing, rootFolderPath: normalizedRoot)
             if !retryable.isEmpty {
                 await coordinator.startBackgroundProcessing(photos: retryable, rootFolderURL: folderURL)
             }
+        }
+    }
+
+    /// Safely deletes the entire local library database, resets all in-memory indexing records,
+    /// stops any active tasks/monitors, and leaves the application in a clean empty state.
+    func deleteLibraryDatabase(peopleViewModel: PeopleViewModel? = nil) async {
+        activeFolderGeneration &+= 1
+        scanTask?.cancel()
+        scanTask = nil
+
+        // 1. Stop continuous folder monitoring & release bookmark access
+        folderMonitor.stopMonitoring()
+        if let oldURL = selectedFolderURL {
+            bookmarkManager.stopAccessing(url: oldURL)
+        }
+
+        // 2. Cancel and cleanly await active processing queue tasks
+        await coordinator.queue.cancelAndAwait()
+
+        // 3. Reset persistent library database on disk
+        do {
+            try await libraryStore.reset()
+        } catch {
+            print("Failed to reset library store: \(error.localizedDescription)")
+        }
+
+        // 4. Clear browser view model in-memory state
+        selectedFolderURL = nil
+        selectedPhoto = nil
+        photos = []
+        scannedCount = 0
+        isScanning = false
+        isReconciling = false
+        isBackgroundProcessingActive = false
+        monitoringState = .idle
+        libraryMetadata = nil
+        totalIndexedPhotos = 0
+        newPhotosCount = 0
+        changedPhotosCount = 0
+        processedPhotosCount = 0
+        failedPhotosCount = 0
+        totalDetectedFaces = 0
+        activeFolderEmbeddingsCount = 0
+        totalStoredEmbeddings = 0
+        totalStoredPhotos = 0
+        totalStoredFaces = 0
+        totalStoredGroups = 0
+        activeFolderPeopleCount = 0
+        queueMetrics = QueueProgressMetrics()
+
+        // 5. Clear people view model state
+        if let peopleVM = peopleViewModel {
+            await peopleVM.resetAllData()
         }
     }
 

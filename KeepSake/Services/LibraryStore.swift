@@ -68,9 +68,31 @@ actor LibraryStore {
     private var snapshot: LibraryIndexSnapshot
     private let storageURL: URL
     private let fileManager: FileManager
+    private var hasUnpersistedChanges: Bool = false
 
-    /// Default production location in Application Support.
+    private static let isRunningInTestEnvironment: Bool = {
+        return ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil ||
+               ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil ||
+               NSClassFromString("XCTestCase") != nil
+    }()
+
+    public static var defaultStorageURLOverride: URL?
+
+    private static let testIsolatedStorageURL: URL = {
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("KeepSakeTests_\(ProcessInfo.processInfo.globallyUniqueString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        return temp.appendingPathComponent("library_index.json")
+    }()
+
+    /// Default production location in Application Support (or isolated directory in test environment).
     static var defaultStorageURL: URL {
+        if let override = defaultStorageURLOverride {
+            return override
+        }
+        if isRunningInTestEnvironment {
+            return testIsolatedStorageURL
+        }
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
         let dir = appSupport.appendingPathComponent("KeepSake", isDirectory: true)
@@ -118,11 +140,23 @@ actor LibraryStore {
         return snapshot.photos.first { $0.id == id }
     }
 
-    func getPhoto(byRelativePath relativePath: String) -> PhotoRecord? {
+    func getPhoto(byRelativePath relativePath: String, rootFolderPath: String? = nil) -> PhotoRecord? {
+        if let root = rootFolderPath {
+            let normalizedRoot = URL(fileURLWithPath: root).standardizedFileURL.path
+            return snapshot.photos.first { p in
+                p.relativePath == relativePath && isPhoto(p, matchingNormalizedRoot: normalizedRoot)
+            }
+        }
         return snapshot.photos.first { $0.relativePath == relativePath }
     }
 
-    func getPhotos(byState state: PhotoProcessingState) -> [PhotoRecord] {
+    func getPhotos(byState state: PhotoProcessingState, rootFolderPath: String? = nil) -> [PhotoRecord] {
+        if let root = rootFolderPath {
+            let normalizedRoot = URL(fileURLWithPath: root).standardizedFileURL.path
+            return snapshot.photos.filter { p in
+                p.processingState == state && isPhoto(p, matchingNormalizedRoot: normalizedRoot)
+            }
+        }
         return snapshot.photos.filter { $0.processingState == state }
     }
 
@@ -135,7 +169,13 @@ actor LibraryStore {
         try persistToDisk()
     }
 
-    func updatePhotoState(id: UUID, state: PhotoProcessingState, failureReason: String? = nil, detectedFacesCount: Int? = nil) throws {
+    func updatePhotoState(
+        id: UUID,
+        state: PhotoProcessingState,
+        failureReason: String? = nil,
+        detectedFacesCount: Int? = nil,
+        persistImmediately: Bool = true
+    ) throws {
         if let idx = snapshot.photos.firstIndex(where: { $0.id == id }) {
             snapshot.photos[idx].processingState = state
             snapshot.photos[idx].lastProcessedDate = Date()
@@ -145,7 +185,11 @@ actor LibraryStore {
             if let count = detectedFacesCount {
                 snapshot.photos[idx].detectedFacesCount = count
             }
-            try persistToDisk()
+            if persistImmediately {
+                try persistToDisk()
+            } else {
+                hasUnpersistedChanges = true
+            }
         }
     }
 
@@ -159,13 +203,17 @@ actor LibraryStore {
         return snapshot.faces
     }
 
-    func saveFaces(_ newFaces: [FaceRecord], forPhotoId photoId: UUID) throws {
+    func saveFaces(_ newFaces: [FaceRecord], forPhotoId photoId: UUID, persistImmediately: Bool = true) throws {
         // Clear previous faces and their embeddings for this photo
         let oldFaceIds = Set(snapshot.faces.filter { $0.photoId == photoId }.map { $0.id })
         snapshot.faces.removeAll { $0.photoId == photoId }
         snapshot.embeddings.removeAll { oldFaceIds.contains($0.faceId) || $0.photoId == photoId }
         snapshot.faces.append(contentsOf: newFaces)
-        try persistToDisk()
+        if persistImmediately {
+            try persistToDisk()
+        } else {
+            hasUnpersistedChanges = true
+        }
     }
 
     func getEmbeddings() -> [EmbeddingRecord] {
@@ -185,7 +233,7 @@ actor LibraryStore {
         try persistToDisk()
     }
 
-    func saveEmbeddings(_ newEmbeddings: [EmbeddingRecord]) throws {
+    func saveEmbeddings(_ newEmbeddings: [EmbeddingRecord], persistImmediately: Bool = true) throws {
         for emb in newEmbeddings {
             if let idx = snapshot.embeddings.firstIndex(where: { $0.faceId == emb.faceId }) {
                 snapshot.embeddings[idx] = emb
@@ -193,7 +241,18 @@ actor LibraryStore {
                 snapshot.embeddings.append(emb)
             }
         }
-        try persistToDisk()
+        if persistImmediately {
+            try persistToDisk()
+        } else {
+            hasUnpersistedChanges = true
+        }
+    }
+
+    /// Explicitly flushes any pending in-memory mutations to disk if unpersisted changes exist.
+    func flushPendingSaves() throws {
+        if hasUnpersistedChanges {
+            try persistToDisk()
+        }
     }
 
     // MARK: - Face Group Operations
@@ -1030,7 +1089,7 @@ actor LibraryStore {
         let rootPath = rootFolderURL.standardizedFileURL.path
         var existingByPath: [String: PhotoRecord] = [:]
         for p in snapshot.photos {
-            if p.rootFolderPath == rootPath || p.rootFolderPath == nil {
+            if isPhoto(p, matchingNormalizedRoot: rootPath) {
                 existingByPath[p.relativePath] = p
             }
         }
@@ -1038,6 +1097,7 @@ actor LibraryStore {
         var newPhotos: [PhotoRecord] = []
         var changedPhotos: [PhotoRecord] = []
         var unchangedPhotos: [PhotoRecord] = []
+        var unindexedPhotos: [PhotoRecord] = []
         var seenRelativePaths = Set<String>()
 
         for item in scannedPhotos {
@@ -1061,8 +1121,13 @@ actor LibraryStore {
                     modificationDate: dateMod
                 )
 
-                if existing.fileFingerprint != currentFingerprint || existing.fileSize != item.fileSize {
-                    // CHANGED PHOTO
+                let sizeChanged = existing.fileSize != item.fileSize
+                let dateChanged = abs(existing.modificationDate.timeIntervalSince(dateMod)) >= 1.0
+                let fingerprintChanged = existing.fileFingerprint != currentFingerprint
+                let fileContentChanged = sizeChanged || (dateChanged && fingerprintChanged)
+
+                if fileContentChanged {
+                    // CHANGED PHOTO: contents modified on disk
                     var updated = existing
                     updated.fileSize = item.fileSize
                     updated.modificationDate = dateMod
@@ -1080,16 +1145,59 @@ actor LibraryStore {
                     }
                     changedPhotos.append(updated)
                 } else {
-                    // UNCHANGED PHOTO - ensure rootFolderPath is recorded
-                    if existing.rootFolderPath != rootPath {
-                        var updated = existing
+                    // UNCHANGED PHOTO on disk - ensure rootFolderPath is recorded
+                    var updated = existing
+                    if updated.rootFolderPath != rootPath {
                         updated.rootFolderPath = rootPath
                         if let idx = snapshot.photos.firstIndex(where: { $0.id == updated.id }) {
                             snapshot.photos[idx] = updated
                         }
+                    }
+
+                    switch updated.processingState {
+                    case .discovered, .needsReprocessing:
+                        // Photo was never processed, or was interrupted/cancelled during earlier session
+                        unindexedPhotos.append(updated)
                         unchangedPhotos.append(updated)
-                    } else {
-                        unchangedPhotos.append(existing)
+
+                    case .processing:
+                        // Left in .processing from interrupted crash or unexpected exit
+                        updated.processingState = .needsReprocessing
+                        updated.failureReason = "Interrupted during previous session"
+                        if let idx = snapshot.photos.firstIndex(where: { $0.id == updated.id }) {
+                            snapshot.photos[idx] = updated
+                        }
+                        unindexedPhotos.append(updated)
+                        unchangedPhotos.append(updated)
+
+                    case .processed:
+                        // Check validity of stored results
+                        if updated.detectedFacesCount > 0 {
+                            let photoFaces = snapshot.faces.filter { $0.photoId == updated.id }
+                            let photoEmbeddings = snapshot.embeddings.filter { $0.photoId == updated.id }
+                            let hasIncompatibleEmbedding = photoEmbeddings.contains { $0.dimension != 512 }
+
+                            if photoFaces.isEmpty || photoEmbeddings.isEmpty || hasIncompatibleEmbedding {
+                                // Incomplete or incompatible results: mark for reprocessing
+                                updated.processingState = .needsReprocessing
+                                updated.failureReason = hasIncompatibleEmbedding ? "Incompatible embedding model" : "Missing face embeddings"
+                                snapshot.faces.removeAll { $0.photoId == updated.id }
+                                snapshot.embeddings.removeAll { $0.photoId == updated.id }
+                                if let idx = snapshot.photos.firstIndex(where: { $0.id == updated.id }) {
+                                    snapshot.photos[idx] = updated
+                                }
+                                changedPhotos.append(updated)
+                            } else {
+                                unchangedPhotos.append(updated)
+                            }
+                        } else {
+                            // Valid zero-face photo
+                            unchangedPhotos.append(updated)
+                        }
+
+                    case .failed:
+                        // Remains failed on disk, eligible for retry button
+                        unchangedPhotos.append(updated)
                     }
                 }
             } else {
@@ -1111,15 +1219,7 @@ actor LibraryStore {
         var removedPhotos: [PhotoRecord] = []
         var removedPhotoIds: Set<UUID> = []
         for photo in snapshot.photos {
-            let isFromThisFolder: Bool
-            if let f = photo.rootFolderPath {
-                isFromThisFolder = (f == rootPath)
-            } else if let metaPath = snapshot.metadata?.folderPath {
-                isFromThisFolder = (metaPath == rootPath)
-            } else {
-                isFromThisFolder = true
-            }
-
+            let isFromThisFolder = isPhoto(photo, matchingNormalizedRoot: rootPath)
             if isFromThisFolder && !seenRelativePaths.contains(photo.relativePath) {
                 removedPhotos.append(photo)
                 removedPhotoIds.insert(photo.id)
@@ -1139,7 +1239,8 @@ actor LibraryStore {
             newPhotos: newPhotos,
             changedPhotos: changedPhotos,
             unchangedPhotos: unchangedPhotos,
-            removedPhotos: removedPhotos
+            removedPhotos: removedPhotos,
+            unindexedPhotos: unindexedPhotos
         )
     }
 
@@ -1158,7 +1259,12 @@ actor LibraryStore {
             snapshot.faces.removeAll { !validPhotoIds.contains($0.photoId) }
 
             let validFaceIds = Set(snapshot.faces.map(\.id))
-            snapshot.embeddings.removeAll { !validFaceIds.contains($0.faceId) || !validPhotoIds.contains($0.photoId) }
+            var seenFaceIdsForEmb = Set<UUID>()
+            snapshot.embeddings = snapshot.embeddings.filter { emb in
+                validFaceIds.contains(emb.faceId) &&
+                validPhotoIds.contains(emb.photoId) &&
+                seenFaceIdsForEmb.insert(emb.faceId).inserted
+            }
 
             var seenFaceIds = Set<UUID>()
             var sanitizedGroups: [GroupRecord] = []
@@ -1273,11 +1379,13 @@ actor LibraryStore {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(snapshot)
         try data.write(to: storageURL, options: .atomic)
+        self.hasUnpersistedChanges = false
     }
 
     /// Clears the entire in-memory snapshot and deletes the file from disk (useful for tests/reset).
     func reset() throws {
         self.snapshot = LibraryIndexSnapshot()
+        self.hasUnpersistedChanges = false
         if fileManager.fileExists(atPath: storageURL.path) {
             try fileManager.removeItem(at: storageURL)
         }

@@ -154,13 +154,6 @@ struct ContentView: View {
                 }
             }
         }
-        .onChange(of: selectedSection) { _, newSection in
-            if newSection == .people || newSection == .suggestions {
-                Task {
-                    await peopleViewModel.loadData(rootFolderURL: viewModel.selectedFolderURL)
-                }
-            }
-        }
         .onChange(of: viewModel.selectedFolderURL) { _, newURL in
             Task {
                 await peopleViewModel.loadData(rootFolderURL: newURL)
@@ -507,7 +500,7 @@ struct ContentView: View {
                             .font(.caption2)
                             .foregroundStyle(.secondary)
 
-                        Label("\(viewModel.totalStoredEmbeddings) embeddings", systemImage: "bolt.fill")
+                        Label("\(viewModel.activeFolderEmbeddingsCount) embeddings", systemImage: "bolt.fill")
                             .font(.caption2)
                             .foregroundStyle(.purple)
                     }

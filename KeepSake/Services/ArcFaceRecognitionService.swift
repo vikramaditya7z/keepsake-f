@@ -22,7 +22,8 @@ struct ArcFaceRecognitionService: FaceRecognitionServiceProtocol {
         photoURL: URL,
         faceId: UUID
     ) async throws -> FaceEmbedding {
-        return try await Task.detached(priority: .userInitiated) {
+        try Task.checkCancellation()
+        return try autoreleasepool {
             let startTime = ContinuousClock.now
 
             // 1. Resize and crop face to standard ArcFace input resolution (112x112 RGB)
@@ -58,8 +59,7 @@ struct ArcFaceRecognitionService: FaceRecognitionServiceProtocol {
                 modelName: activeModelName,
                 inferenceTimeMs: milliseconds
             )
-        }.value
-
+        }
     }
 
     /// Preprocesses a detected face from a photo file and generates its 512-D ArcFace embedding.

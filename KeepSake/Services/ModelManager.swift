@@ -141,12 +141,29 @@ public final class ModelManager: ObservableObject {
     @Published public private(set) var conversionProgress: Double = 0.0
     @Published public private(set) var conversionMessage: String = ""
 
+    /// Detects whether code is executing inside an XCTest runner environment.
+    public static let isRunningInTestEnvironment: Bool = {
+        return ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil ||
+               ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil ||
+               NSClassFromString("XCTestCase") != nil
+    }()
+
+    /// Isolated models directory specifically used during unit test execution to prevent test suite from touching production storage.
+    private static let testIsolatedDirectoryURL: URL = {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("KeepSakeTestModels_\(ProcessInfo.processInfo.globallyUniqueString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        return temp
+    }()
+
     /// Standard Application Support directory where KeepSake manages user-installed models.
     public nonisolated(unsafe) static var managedModelsDirectoryOverride: URL?
 
     public nonisolated static var managedModelsDirectoryURL: URL {
         if let override = managedModelsDirectoryOverride {
             return override
+        }
+        if isRunningInTestEnvironment {
+            return testIsolatedDirectoryURL
         }
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         return appSupport.appendingPathComponent("KeepSake/Models", isDirectory: true)

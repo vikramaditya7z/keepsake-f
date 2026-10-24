@@ -10,7 +10,25 @@ struct FaceCropThumbnailView: View {
     var isCircular: Bool = true
 
     @State private var image: NSImage?
-    @State private var isLoading: Bool = false
+    @State private var isLoading: Bool
+
+    init(
+        faceId: UUID,
+        photoURL: URL?,
+        boundingBox: CGRect?,
+        size: CGFloat = 80,
+        isCircular: Bool = true
+    ) {
+        self.faceId = faceId
+        self.photoURL = photoURL
+        self.boundingBox = boundingBox
+        self.size = size
+        self.isCircular = isCircular
+
+        let cached = FaceCropLoader.shared.cachedImage(for: faceId)
+        _image = State(initialValue: cached)
+        _isLoading = State(initialValue: cached == nil)
+    }
 
     var body: some View {
         ZStack {
@@ -64,8 +82,23 @@ struct FaceCropThumbnailView: View {
         guard let url = photoURL, let box = boundingBox else {
             return
         }
+
+        if let cached = FaceCropLoader.shared.cachedImage(for: faceId) {
+            self.image = cached
+            self.isLoading = false
+            return
+        }
+
+        guard !Task.isCancelled else { return }
         isLoading = true
-        image = await FaceCropLoader.shared.loadFaceCrop(faceId: faceId, photoURL: url, boundingBox: box)
+        let loaded = await FaceCropLoader.shared.loadFaceCrop(
+            faceId: faceId,
+            photoURL: url,
+            boundingBox: box,
+            targetSize: size * 2
+        )
+        guard !Task.isCancelled else { return }
+        image = loaded
         isLoading = false
     }
 }

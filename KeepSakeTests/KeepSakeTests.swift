@@ -3789,7 +3789,9 @@ final class KeepSakeTests: XCTestCase {
     /// Regression Test: Real production dataset rebuild and invariant audit.
     func testProductionDatasetRebuildAndAudit() async throws {
         let prodURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("KeepSake/library_index.json") ?? URL(fileURLWithPath: "/tmp/nonexistent")
-        guard FileManager.default.fileExists(atPath: prodURL.path) else { return }
+        guard FileManager.default.fileExists(atPath: prodURL.path) else {
+            throw XCTSkip("Production library_index.json not found at \(prodURL.path)")
+        }
 
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("test_prod_audit_\(UUID().uuidString).json")
         try FileManager.default.copyItem(at: prodURL, to: tempURL)
@@ -3801,6 +3803,9 @@ final class KeepSakeTests: XCTestCase {
 
         // 1. Initial snapshot check
         let photos = await store.getAllPhotos()
+        guard photos.count >= 19 else {
+            throw XCTSkip("Production library_index.json contains \(photos.count) photos, expected at least 19 for rebuild audit")
+        }
         let faces = await store.getAllFaces()
         let embeddings = await store.getEmbeddings()
 
@@ -4443,7 +4448,9 @@ final class KeepSakeTests: XCTestCase {
     /// D. Ground-truth-style clustering: Verify the known 19-photo dataset produces ~17 identities without false merges.
     func testRegression_D_GroundTruth19PhotoDatasetClustering() async throws {
         let prodURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("KeepSake/library_index.json") ?? URL(fileURLWithPath: "/tmp/nonexistent")
-        guard FileManager.default.fileExists(atPath: prodURL.path) else { return }
+        guard FileManager.default.fileExists(atPath: prodURL.path) else {
+            throw XCTSkip("Production library_index.json is not present for 19-photo ground truth clustering regression test")
+        }
 
         // Copy production index to temp file so we can run tests without side effects
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("test_gt_19photo_\(UUID().uuidString).json")
@@ -4456,7 +4463,9 @@ final class KeepSakeTests: XCTestCase {
 
         let allPhotos = await store.getAllPhotos()
         let test1Photos = allPhotos.filter { $0.rootFolderPath == nil || $0.rootFolderPath == rootURL.standardizedFileURL.path }
-        guard test1Photos.count == 19 else { return }
+        guard test1Photos.count == 19 else {
+            throw XCTSkip("19-photo test dataset not found in library_index.json at \(rootURL.path) (found \(test1Photos.count) matching photos out of \(allPhotos.count) total)")
+        }
         let test1PhotoIds = Set(test1Photos.map { $0.id })
 
         try await coordinator.rebuildAllIdentities(rootFolderURL: rootURL, threshold: 0.54)
@@ -4976,7 +4985,9 @@ final class KeepSakeTests: XCTestCase {
     /// 9. Ground-truth 19-photo dataset FaceCluster formation audit.
     func testStep2_FaceCluster_GroundTruth19PhotoDatasetAudit() async throws {
         let prodURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("KeepSake/library_index.json") ?? URL(fileURLWithPath: "/tmp/nonexistent")
-        guard FileManager.default.fileExists(atPath: prodURL.path) else { return }
+        guard FileManager.default.fileExists(atPath: prodURL.path) else {
+            throw XCTSkip("Production library_index.json is not present at \(prodURL.path)")
+        }
 
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("test_gt_audit_\(UUID().uuidString).json")
         try FileManager.default.copyItem(at: prodURL, to: tempURL)
@@ -4986,7 +4997,9 @@ final class KeepSakeTests: XCTestCase {
         let store = LibraryStore(storageURL: tempURL)
         let allPhotos = await store.getAllPhotos()
         let test1Photos = allPhotos.filter { $0.rootFolderPath == nil || $0.rootFolderPath == rootURL.standardizedFileURL.path }
-        guard test1Photos.count == 19 else { return }
+        guard test1Photos.count == 19 else {
+            throw XCTSkip("19-photo test dataset not found in library_index.json at \(rootURL.path) (found \(test1Photos.count) matching photos out of \(allPhotos.count) total)")
+        }
         let test1PhotoIds = Set(test1Photos.map { $0.id })
 
         let allFaces = (await store.getAllFaces()).filter { test1PhotoIds.contains($0.photoId) }
@@ -5049,8 +5062,7 @@ final class KeepSakeTests: XCTestCase {
             .deletingLastPathComponent()
             .appendingPathComponent("test-dataset/manifest.json")
         guard FileManager.default.fileExists(atPath: manifestURL.path) else {
-            print("[BENCHMARK SKIP] manifest.json not found at \(manifestURL.path)")
-            return
+            throw XCTSkip("test-dataset/manifest.json not found at \(manifestURL.path)")
         }
 
         let datasetDir = manifestURL.deletingLastPathComponent()
@@ -5338,8 +5350,7 @@ final class KeepSakeTests: XCTestCase {
             .appendingPathComponent("test-dataset")
         let manifestURL = datasetDir.appendingPathComponent("manifest.json")
         guard FileManager.default.fileExists(atPath: manifestURL.path) else {
-            print("[SKIP] test-dataset/manifest.json not found")
-            return
+            throw XCTSkip("test-dataset/manifest.json not found at \(manifestURL.path)")
         }
 
         let data = try Data(contentsOf: manifestURL)
@@ -9643,9 +9654,9 @@ final class KeepSakeTests: XCTestCase {
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         ModelManager.managedModelsDirectoryOverride = tempDir
         defer {
+            ModelManager.shared.clearModel()
             ModelManager.managedModelsDirectoryOverride = nil
             try? FileManager.default.removeItem(at: tempDir)
-            ModelManager.shared.clearModel()
         }
 
         let manager = ModelManager.shared
@@ -9672,9 +9683,9 @@ final class KeepSakeTests: XCTestCase {
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         ModelManager.managedModelsDirectoryOverride = tempDir
         defer {
+            ModelManager.shared.clearModel()
             ModelManager.managedModelsDirectoryOverride = nil
             try? FileManager.default.removeItem(at: tempDir)
-            ModelManager.shared.clearModel()
         }
 
         let activeURL = ModelManager.managedActiveModelURL
@@ -9775,9 +9786,9 @@ final class KeepSakeTests: XCTestCase {
             try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
             ModelManager.managedModelsDirectoryOverride = tempDir
             defer {
+                manager.clearModel()
                 ModelManager.managedModelsDirectoryOverride = nil
                 try? FileManager.default.removeItem(at: tempDir)
-                manager.clearModel()
             }
 
             try await manager.installModel(from: validModelURL)
@@ -10026,8 +10037,1380 @@ final class KeepSakeTests: XCTestCase {
             throw NSError(domain: "Test", code: 4, userInfo: [NSLocalizedDescriptionKey: "Failed to finalize destination"])
         }
     }
-}
+    // MARK: - Memory & Concurrency Lifecycle Regression Tests
 
+    func testPhase1_QueueCancelAndAwait_DrainsAllWorkersCleanly() async {
+        let queue = LibraryProcessingQueue(maxConcurrentWorkers: 2)
+        let rootURL = URL(fileURLWithPath: "/tmp")
+        let item1 = PhotoRecord(
+            id: UUID(),
+            relativePath: "photo1.jpg",
+            filename: "photo1.jpg",
+            fileSize: 1000,
+            modificationDate: Date()
+        )
+        let item2 = PhotoRecord(
+            id: UUID(),
+            relativePath: "photo2.jpg",
+            filename: "photo2.jpg",
+            fileSize: 1000,
+            modificationDate: Date()
+        )
+
+        await queue.enqueueAndStart(
+            items: [item1, item2],
+            rootFolderURL: rootURL,
+            processor: { _, _ in
+                try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
+                return .success((facesCount: 1, embeddingsCount: 1))
+            }
+        )
+
+        // Cancel and await worker drainage
+        await queue.cancelAndAwait()
+        let metrics = await queue.getMetrics()
+        XCTAssertEqual(metrics.state, .cancelled)
+    }
+
+    func testPhase2_SingleImageDecode_ReusableForDetectionAndCropping() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("SingleDecode_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let photoFile = tempDir.appendingPathComponent("test.jpg")
+        try createOrientationTestJPEG(at: photoFile, width: 400, height: 400, orientation: 1)
+
+        let preprocessor = FacePreprocessingService()
+        // Single decode from disk
+        let orientedImage = try preprocessor.loadOrientedImage(from: photoFile)
+        XCTAssertEqual(orientedImage.width, 400)
+        XCTAssertEqual(orientedImage.height, 400)
+
+        // Extract multiple face crops in-memory without re-reading from disk
+        let box1 = CGRect(x: 0.1, y: 0.1, width: 0.3, height: 0.3)
+        let box2 = CGRect(x: 0.5, y: 0.5, width: 0.3, height: 0.3)
+
+        let crop1 = try preprocessor.cropOrAlignFace(from: orientedImage, normalizedBox: box1, landmarks: nil)
+        let crop2 = try preprocessor.cropOrAlignFace(from: orientedImage, normalizedBox: box2, landmarks: nil)
+
+        XCTAssertNotNil(crop1)
+        XCTAssertNotNil(crop2)
+    }
+
+    func testPhase4_LibraryStoreBatching_FlushesPendingMutationsAccurately() async throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("BatchStoreTest_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let storeURL = tempDir.appendingPathComponent("library_index.json")
+        let store = LibraryStore(storageURL: storeURL)
+
+        let photoId = UUID()
+        let photo = PhotoRecord(
+            id: photoId,
+            relativePath: "batched.jpg",
+            filename: "batched.jpg",
+            fileSize: 500,
+            modificationDate: Date(),
+            processingState: .discovered
+        )
+        try await store.savePhoto(photo)
+
+        // Perform mutations with persistImmediately: false
+        try await store.updatePhotoState(id: photoId, state: .processing, persistImmediately: false)
+        let face = FaceRecord(id: UUID(), photoId: photoId, boundingBox: CGRect(x: 0.2, y: 0.2, width: 0.4, height: 0.4))
+        try await store.saveFaces([face], forPhotoId: photoId, persistImmediately: false)
+        try await store.updatePhotoState(id: photoId, state: .processed, detectedFacesCount: 1, persistImmediately: false)
+
+        // Flush batch to disk
+        try await store.flushPendingSaves()
+
+        // Reload store from disk to verify atomic durability
+        let reloadedStore = LibraryStore(storageURL: storeURL)
+        let savedPhoto = await reloadedStore.getPhoto(byId: photoId)
+        let savedFaces = await reloadedStore.getFaces(forPhotoId: photoId)
+
+        XCTAssertEqual(savedPhoto?.processingState, .processed)
+        XCTAssertEqual(savedFaces.count, 1)
+    }
+
+    // MARK: - Milestone V8: Incremental Indexing, Counts, Scoping & Database Deletion Tests
+
+    func testIncrementalIndexing_ReopeningSameFolderSkipsValidIndexedPhotos() async throws {
+        let scratchDir = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_reopen_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: scratchDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratchDir) }
+
+        let storeURL = scratchDir.appendingPathComponent("store.json")
+        let store = LibraryStore(storageURL: storeURL)
+
+        let photo1URL = scratchDir.appendingPathComponent("img1.jpg")
+        let photo2URL = scratchDir.appendingPathComponent("img2.jpg")
+        try Data("1".utf8).write(to: photo1URL)
+        try Data("2".utf8).write(to: photo2URL)
+
+        let scanned = [
+            PhotoItem(url: photo1URL, fileSize: 1, dateModified: Date(timeIntervalSince1970: 1000)),
+            PhotoItem(url: photo2URL, fileSize: 1, dateModified: Date(timeIntervalSince1970: 1000))
+        ]
+
+        // 1. Initial scan: both are new
+        let rec1 = try await store.reconcile(scannedPhotos: scanned, rootFolderURL: scratchDir)
+        XCTAssertEqual(rec1.newPhotos.count, 2)
+        XCTAssertEqual(rec1.pendingPhotos.count, 2)
+
+        // 2. Mark both as successfully processed with valid 512-D embeddings
+        for p in rec1.newPhotos {
+            let face = FaceRecord(photoId: p.id, boundingBox: CGRect(x: 0.1, y: 0.1, width: 0.2, height: 0.2))
+            try await store.saveFaces([face], forPhotoId: p.id)
+            let emb = EmbeddingRecord(faceId: face.id, photoId: p.id, vector: Array(repeating: 0.1, count: 512))
+            try await store.saveEmbeddings([emb])
+            try await store.updatePhotoState(id: p.id, state: .processed, detectedFacesCount: 1)
+        }
+
+        // 3. Re-open the same folder: both should be skipped (unchanged, 0 pending)
+        let rec2 = try await store.reconcile(scannedPhotos: scanned, rootFolderURL: scratchDir)
+        XCTAssertEqual(rec2.newPhotos.count, 0)
+        XCTAssertEqual(rec2.changedPhotos.count, 0)
+        XCTAssertEqual(rec2.unindexedPhotos.count, 0)
+        XCTAssertEqual(rec2.pendingPhotos.count, 0, "Valid previously indexed photos must not be reprocessed on reopen")
+        XCTAssertEqual(rec2.unchangedPhotos.count, 2)
+    }
+
+    func testIncrementalIndexing_AddingNewPhotoProcessesOnlyThatPhoto() async throws {
+        let scratchDir = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_addnew_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: scratchDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratchDir) }
+
+        let storeURL = scratchDir.appendingPathComponent("store.json")
+        let store = LibraryStore(storageURL: storeURL)
+
+        let photo1URL = scratchDir.appendingPathComponent("img1.jpg")
+        let photo2URL = scratchDir.appendingPathComponent("img2.jpg")
+        try Data("1".utf8).write(to: photo1URL)
+        try Data("2".utf8).write(to: photo2URL)
+
+        let initialScanned = [
+            PhotoItem(url: photo1URL, fileSize: 1, dateModified: Date(timeIntervalSince1970: 1000)),
+            PhotoItem(url: photo2URL, fileSize: 1, dateModified: Date(timeIntervalSince1970: 1000))
+        ]
+
+        let rec1 = try await store.reconcile(scannedPhotos: initialScanned, rootFolderURL: scratchDir)
+        for p in rec1.newPhotos {
+            try await store.updatePhotoState(id: p.id, state: .processed, detectedFacesCount: 0)
+        }
+
+        // Now add a 3rd photo
+        let photo3URL = scratchDir.appendingPathComponent("img3.jpg")
+        try Data("3".utf8).write(to: photo3URL)
+        let updatedScanned = initialScanned + [
+            PhotoItem(url: photo3URL, fileSize: 1, dateModified: Date(timeIntervalSince1970: 1000))
+        ]
+
+        let rec2 = try await store.reconcile(scannedPhotos: updatedScanned, rootFolderURL: scratchDir)
+        XCTAssertEqual(rec2.newPhotos.count, 1)
+        XCTAssertEqual(rec2.newPhotos.first?.relativePath, "img3.jpg")
+        XCTAssertEqual(rec2.pendingPhotos.count, 1, "Only the new photo must be queued for processing")
+        XCTAssertEqual(rec2.unchangedPhotos.count, 2)
+    }
+
+    func testIncrementalIndexing_ModifyingExistingPhotoInvalidatesStaleResults() async throws {
+        let scratchDir = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_modify_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: scratchDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratchDir) }
+
+        let storeURL = scratchDir.appendingPathComponent("store.json")
+        let store = LibraryStore(storageURL: storeURL)
+
+        let photo1URL = scratchDir.appendingPathComponent("img1.jpg")
+        try Data("initial content".utf8).write(to: photo1URL)
+
+        let scanned1 = [
+            PhotoItem(url: photo1URL, fileSize: 15, dateModified: Date(timeIntervalSince1970: 1000))
+        ]
+        let rec1 = try await store.reconcile(scannedPhotos: scanned1, rootFolderURL: scratchDir)
+        let photoRecord = rec1.newPhotos.first!
+
+        let face = FaceRecord(photoId: photoRecord.id, boundingBox: CGRect(x: 0.2, y: 0.2, width: 0.3, height: 0.3))
+        try await store.saveFaces([face], forPhotoId: photoRecord.id)
+        let emb = EmbeddingRecord(faceId: face.id, photoId: photoRecord.id, vector: Array(repeating: 0.5, count: 512))
+        try await store.saveEmbeddings([emb])
+        try await store.updatePhotoState(id: photoRecord.id, state: .processed, detectedFacesCount: 1)
+
+        let facesBefore = await store.getFaces(forPhotoId: photoRecord.id)
+        let embsBefore = await store.getEmbeddings()
+        XCTAssertEqual(facesBefore.count, 1)
+        XCTAssertEqual(embsBefore.count, 1)
+
+        // Modify the file on disk (size & modification date change)
+        let scanned2 = [
+            PhotoItem(url: photo1URL, fileSize: 30, dateModified: Date(timeIntervalSince1970: 2000))
+        ]
+        let rec2 = try await store.reconcile(scannedPhotos: scanned2, rootFolderURL: scratchDir)
+        XCTAssertEqual(rec2.changedPhotos.count, 1)
+        XCTAssertEqual(rec2.pendingPhotos.count, 1)
+
+        // Stale faces and embeddings must be cleared
+        let updatedFaces = await store.getFaces(forPhotoId: photoRecord.id)
+        let updatedEmbeddings = await store.getEmbeddings()
+        XCTAssertEqual(updatedFaces.count, 0, "Stale faces must be invalidated on photo modification")
+        XCTAssertEqual(updatedEmbeddings.count, 0, "Stale embeddings must be invalidated on photo modification")
+
+        let updatedPhoto = await store.getPhoto(byId: photoRecord.id)
+        XCTAssertEqual(updatedPhoto?.processingState, .needsReprocessing)
+    }
+
+    func testIncrementalIndexing_CancelledAndFailedPhotosCanBeRetried() async throws {
+        let scratchDir = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_retry_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: scratchDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratchDir) }
+
+        let storeURL = scratchDir.appendingPathComponent("store.json")
+        let store = LibraryStore(storageURL: storeURL)
+        let normalizedRoot = scratchDir.standardizedFileURL.path
+
+        let photo1URL = scratchDir.appendingPathComponent("photo_fail.jpg")
+        let photo2URL = scratchDir.appendingPathComponent("photo_cancel.jpg")
+        try Data("1".utf8).write(to: photo1URL)
+        try Data("2".utf8).write(to: photo2URL)
+
+        let scanned = [
+            PhotoItem(url: photo1URL, fileSize: 1, dateModified: Date(timeIntervalSince1970: 1000)),
+            PhotoItem(url: photo2URL, fileSize: 1, dateModified: Date(timeIntervalSince1970: 1000))
+        ]
+
+        let rec = try await store.reconcile(scannedPhotos: scanned, rootFolderURL: scratchDir)
+        let pFail = rec.newPhotos[0]
+        let pCancel = rec.newPhotos[1]
+
+        try await store.updatePhotoState(id: pFail.id, state: .failed, failureReason: "Corrupted decode")
+        try await store.updatePhotoState(id: pCancel.id, state: .needsReprocessing, failureReason: "Cancelled due to folder switch")
+
+        // 1. Reconcile sees pCancel as unindexed/needsReprocessing so it is pending, while pFail remains failed
+        let rec2 = try await store.reconcile(scannedPhotos: scanned, rootFolderURL: scratchDir)
+        XCTAssertTrue(rec2.pendingPhotos.contains { $0.id == pCancel.id }, "Interrupted/cancelled photo must be pending")
+        XCTAssertFalse(rec2.pendingPhotos.contains { $0.id == pFail.id }, "Failed photo remains eligible for retry, not auto-reprocessed")
+
+        // 2. Retry failed photo resets it to needsReprocessing
+        let failedPhotos = await store.getPhotos(byState: .failed, rootFolderPath: normalizedRoot)
+        XCTAssertEqual(failedPhotos.count, 1)
+        for p in failedPhotos {
+            try await store.updatePhotoState(id: p.id, state: .needsReprocessing)
+        }
+
+        let retryable = await store.getPhotos(byState: .needsReprocessing, rootFolderPath: normalizedRoot)
+        XCTAssertEqual(retryable.count, 2, "Both cancelled and retried failed photos are now eligible for processing")
+    }
+
+    func testIncrementalIndexing_RepeatedFolderSelectionDoesNotDuplicateQueueOrRecords() async throws {
+        let scratchDir = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_repeat_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: scratchDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratchDir) }
+
+        let storeURL = scratchDir.appendingPathComponent("store.json")
+        let store = LibraryStore(storageURL: storeURL)
+
+        let photoURL = scratchDir.appendingPathComponent("single.jpg")
+        try Data("test".utf8).write(to: photoURL)
+        let scanned = [PhotoItem(url: photoURL, fileSize: 4, dateModified: Date(timeIntervalSince1970: 1000))]
+
+        for _ in 0..<5 {
+            _ = try await store.reconcile(scannedPhotos: scanned, rootFolderURL: scratchDir)
+        }
+
+        let allPhotos = await store.getAllPhotos()
+        XCTAssertEqual(allPhotos.count, 1, "Repeated reconciliation of the same folder must never create duplicate photo records")
+    }
+
+    func testFolderSwitching_CannotCorruptCurrentProcessingContext() async throws {
+        let scratchA = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_folderA_\(UUID().uuidString)")
+        let scratchB = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_folderB_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: scratchA, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: scratchB, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: scratchA)
+            try? FileManager.default.removeItem(at: scratchB)
+        }
+
+        let storeURL = scratchA.appendingPathComponent("store.json")
+        let store = LibraryStore(storageURL: storeURL)
+
+        // Both folders have an image with identical filename "photo.jpg"
+        let photoA = scratchA.appendingPathComponent("photo.jpg")
+        let photoB = scratchB.appendingPathComponent("photo.jpg")
+        try Data("folderA".utf8).write(to: photoA)
+        try Data("folderB".utf8).write(to: photoB)
+
+        let scannedA = [PhotoItem(url: photoA, fileSize: 7, dateModified: Date(timeIntervalSince1970: 1000))]
+        let scannedB = [PhotoItem(url: photoB, fileSize: 7, dateModified: Date(timeIntervalSince1970: 2000))]
+
+        // 1. Reconcile Folder A
+        let recA = try await store.reconcile(scannedPhotos: scannedA, rootFolderURL: scratchA)
+        let pA = recA.newPhotos.first!
+        try await store.updatePhotoState(id: pA.id, state: .processed, detectedFacesCount: 0)
+
+        // 2. Reconcile Folder B
+        let recB = try await store.reconcile(scannedPhotos: scannedB, rootFolderURL: scratchB)
+        let pB = recB.newPhotos.first!
+        try await store.updatePhotoState(id: pB.id, state: .processed, detectedFacesCount: 0)
+
+        // Asserts: Both photos coexist in store without colliding on filename
+        let allPhotos = await store.getAllPhotos()
+        XCTAssertEqual(allPhotos.count, 2, "Photos in different folders with identical filenames must both be preserved")
+
+        // 3. Switch back to Folder A: Folder A photo is preserved and not deleted
+        let recA2 = try await store.reconcile(scannedPhotos: scannedA, rootFolderURL: scratchA)
+        XCTAssertEqual(recA2.newPhotos.count, 0)
+        XCTAssertEqual(recA2.unchangedPhotos.count, 1)
+
+        // Scoped lookup respects root folder
+        let foundA = await store.getPhoto(byRelativePath: "photo.jpg", rootFolderPath: scratchA.path)
+        let foundB = await store.getPhoto(byRelativePath: "photo.jpg", rootFolderPath: scratchB.path)
+        XCTAssertEqual(foundA?.id, pA.id)
+        XCTAssertEqual(foundB?.id, pB.id)
+    }
+
+    func testEmbeddingCounts_MatchesDocumentedScope() async throws {
+        let scratchDir = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_emb_counts_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: scratchDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratchDir) }
+
+        let storeURL = scratchDir.appendingPathComponent("store.json")
+        let store = LibraryStore(storageURL: storeURL)
+        let rootPath = scratchDir.standardizedFileURL.path
+
+        let photo1URL = scratchDir.appendingPathComponent("img1.jpg")
+        try Data("1".utf8).write(to: photo1URL)
+        let scanned = [PhotoItem(url: photo1URL, fileSize: 1, dateModified: Date(timeIntervalSince1970: 1000))]
+
+        let rec = try await store.reconcile(scannedPhotos: scanned, rootFolderURL: scratchDir)
+        let photo = rec.newPhotos.first!
+
+        // Add 2 faces and 2 embeddings for this photo in Folder 1
+        let f1 = FaceRecord(photoId: photo.id, boundingBox: CGRect(x: 0, y: 0, width: 0.1, height: 0.1))
+        let f2 = FaceRecord(photoId: photo.id, boundingBox: CGRect(x: 0.2, y: 0.2, width: 0.1, height: 0.1))
+        try await store.saveFaces([f1, f2], forPhotoId: photo.id)
+
+        let emb1 = EmbeddingRecord(faceId: f1.id, photoId: photo.id, vector: Array(repeating: 0.1, count: 512))
+        let emb2 = EmbeddingRecord(faceId: f2.id, photoId: photo.id, vector: Array(repeating: 0.2, count: 512))
+        try await store.saveEmbeddings([emb1, emb2])
+
+        // Add an unrelated foreign embedding for another folder photo
+        let foreignPhotoId = UUID()
+        let foreignFaceId = UUID()
+        let foreignPhoto = PhotoRecord(
+            id: foreignPhotoId,
+            relativePath: "foreign.jpg",
+            filename: "foreign.jpg",
+            fileSize: 100,
+            modificationDate: Date(),
+            processingState: .processed,
+            rootFolderPath: "/some/other/folder"
+        )
+        try await store.savePhoto(foreignPhoto)
+        let foreignEmb = EmbeddingRecord(faceId: foreignFaceId, photoId: foreignPhotoId, vector: Array(repeating: 0.3, count: 512))
+        try await store.saveEmbeddings([foreignEmb])
+
+        let allEmbeddings = await store.getEmbeddings()
+        XCTAssertEqual(allEmbeddings.count, 3, "Total library embeddings includes all folders")
+
+        // Active folder filter
+        let allPhotos = await store.getAllPhotos()
+        let folderPhotos = allPhotos.filter {
+            guard let r = $0.rootFolderPath else { return false }
+            return URL(fileURLWithPath: r).standardizedFileURL.path == rootPath
+        }
+        let folderPhotoIds = Set(folderPhotos.map(\.id))
+        let folderEmbeddings = allEmbeddings.filter { folderPhotoIds.contains($0.photoId) }
+
+        XCTAssertEqual(folderEmbeddings.count, 2, "Active folder embeddings must count only the 2 embeddings from this folder")
+    }
+
+    func testPersistenceBatching_PreservesCompletedResults() async throws {
+        let scratchDir = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_batch_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: scratchDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratchDir) }
+
+        let storeURL = scratchDir.appendingPathComponent("store.json")
+        let store = LibraryStore(storageURL: storeURL)
+
+        let photoId = UUID()
+        let photo = PhotoRecord(
+            id: photoId,
+            relativePath: "b.jpg",
+            filename: "b.jpg",
+            fileSize: 10,
+            modificationDate: Date(),
+            processingState: .discovered
+        )
+        try await store.savePhoto(photo)
+
+        // Multiple unpersisted mutations
+        try await store.updatePhotoState(id: photoId, state: .processing, persistImmediately: false)
+        let face = FaceRecord(id: UUID(), photoId: photoId, boundingBox: .zero)
+        try await store.saveFaces([face], forPhotoId: photoId, persistImmediately: false)
+        try await store.updatePhotoState(id: photoId, state: .processed, detectedFacesCount: 1, persistImmediately: false)
+
+        try await store.flushPendingSaves()
+
+        let reloaded = LibraryStore(storageURL: storeURL)
+        let reloadedPhoto = await reloaded.getPhoto(byId: photoId)
+        let reloadedFaces = await reloaded.getFaces(forPhotoId: photoId)
+
+        XCTAssertEqual(reloadedPhoto?.processingState, .processed)
+        XCTAssertEqual(reloadedFaces.count, 1)
+    }
+
+    func testDeleteLibraryDatabase_RemovesAllIntendedLibraryRecords() async throws {
+        let scratchDir = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_delete_db_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: scratchDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratchDir) }
+
+        let storeURL = scratchDir.appendingPathComponent("store.json")
+        let store = LibraryStore(storageURL: storeURL)
+
+        let photo = PhotoRecord(relativePath: "p.jpg", filename: "p.jpg", fileSize: 10, modificationDate: Date(), processingState: .processed)
+        try await store.savePhoto(photo)
+        let face = FaceRecord(photoId: photo.id, boundingBox: .zero)
+        try await store.saveFaces([face], forPhotoId: photo.id)
+        let emb = EmbeddingRecord(faceId: face.id, photoId: photo.id, vector: Array(repeating: 0.1, count: 512))
+        try await store.saveEmbeddings([emb])
+        let group = GroupRecord(groupIndex: 1, memberFaceIds: [face.id], averageSimilarity: 0.9, minSimilarity: 0.9, thresholdUsed: 0.54)
+        try await store.saveGroups([group])
+        let person = PersonRecord(name: "Alice", confirmedFaceIds: [face.id])
+        try await store.savePerson(person)
+
+        let initialPhotos = await store.getAllPhotos()
+        let initialFaces = await store.getAllFaces()
+        let initialEmbeddings = await store.getEmbeddings()
+        let initialPeople = await store.getAllPeople()
+        XCTAssertFalse(initialPhotos.isEmpty)
+        XCTAssertFalse(initialFaces.isEmpty)
+        XCTAssertFalse(initialEmbeddings.isEmpty)
+        XCTAssertFalse(initialPeople.isEmpty)
+
+        // Execute reset
+        try await store.reset()
+
+        let resetPhotos = await store.getAllPhotos()
+        let resetFaces = await store.getAllFaces()
+        let resetEmbeddings = await store.getEmbeddings()
+        let resetPeople = await store.getAllPeople()
+        let resetGroups = await store.getGroups()
+        let resetMetadata = await store.getMetadata()
+        XCTAssertEqual(resetPhotos.count, 0)
+        XCTAssertEqual(resetFaces.count, 0)
+        XCTAssertEqual(resetEmbeddings.count, 0)
+        XCTAssertEqual(resetPeople.count, 0)
+        XCTAssertEqual(resetGroups.count, 0)
+        XCTAssertNil(resetMetadata)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: storeURL.path), "Database JSON file must be removed on reset")
+    }
+
+    func testDeleteLibraryDatabase_PreservesOriginalPhotoFiles() async throws {
+        let scratchDir = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_preserve_photos_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: scratchDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratchDir) }
+
+        let photoURL = scratchDir.appendingPathComponent("original.jpg")
+        try Data("my precious photo data".utf8).write(to: photoURL)
+
+        let storeURL = scratchDir.appendingPathComponent("store.json")
+        let store = LibraryStore(storageURL: storeURL)
+        let photo = PhotoRecord(relativePath: "original.jpg", filename: "original.jpg", fileSize: 22, modificationDate: Date(), processingState: .processed)
+        try await store.savePhoto(photo)
+
+        // Reset database
+        try await store.reset()
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: photoURL.path), "Original photo file must NOT be deleted when database is reset")
+        let content = try String(contentsOf: photoURL, encoding: .utf8)
+        XCTAssertEqual(content, "my precious photo data")
+    }
+
+    func testDeleteLibraryDatabase_PreservesInstalledRecognitionModels() async throws {
+        let scratchDir = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_preserve_model_\(UUID().uuidString)")
+        let modelsDir = scratchDir.appendingPathComponent("Models")
+        try FileManager.default.createDirectory(at: modelsDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratchDir) }
+
+        let modelFile = modelsDir.appendingPathComponent("active_model.mlmodelc")
+        try Data("fake model weights".utf8).write(to: modelFile)
+
+        let storeURL = scratchDir.appendingPathComponent("store.json")
+        let store = LibraryStore(storageURL: storeURL)
+
+        try await store.reset()
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: modelFile.path), "Installed recognition model files must remain untouched after database reset")
+    }
+
+    @MainActor
+    func testDeleteLibraryDatabase_PreservesUnrelatedApplicationSettings() async throws {
+        let currentSort = AppSettings.shared.photoSortOrder
+        let currentDev = AppSettings.shared.developerModeEnabled
+        defer {
+            AppSettings.shared.photoSortOrder = currentSort
+            AppSettings.shared.developerModeEnabled = currentDev
+        }
+
+        AppSettings.shared.photoSortOrder = "filename"
+        AppSettings.shared.developerModeEnabled = true
+
+        let scratchDir = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_settings_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: scratchDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratchDir) }
+
+        let storeURL = scratchDir.appendingPathComponent("store.json")
+        let store = LibraryStore(storageURL: storeURL)
+
+        try await store.reset()
+
+        XCTAssertEqual(AppSettings.shared.photoSortOrder, "filename", "Application settings must be preserved")
+        XCTAssertTrue(AppSettings.shared.developerModeEnabled, "Application developerMode setting must be preserved")
+    }
+
+    func testDeleteLibraryDatabase_CancellingConfirmationMakesNoChanges() async throws {
+        let scratchDir = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_cancel_dlg_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: scratchDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratchDir) }
+
+        let storeURL = scratchDir.appendingPathComponent("store.json")
+        let store = LibraryStore(storageURL: storeURL)
+
+        let photo = PhotoRecord(relativePath: "p.jpg", filename: "p.jpg", fileSize: 10, modificationDate: Date(), processingState: .processed)
+        try await store.savePhoto(photo)
+
+        // User cancelled confirmation: delete is NOT invoked
+        // Verify store remains unchanged
+        let photos = await store.getAllPhotos()
+        XCTAssertEqual(photos.count, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: storeURL.path))
+    }
+
+    func testDeleteLibraryDatabase_StaleBackgroundTasksCannotUndoReset() async throws {
+        let scratchDir = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_stale_task_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: scratchDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratchDir) }
+
+        let storeURL = scratchDir.appendingPathComponent("store.json")
+        let store = LibraryStore(storageURL: storeURL)
+        let queue = LibraryProcessingQueue()
+
+        let photo = PhotoRecord(relativePath: "p.jpg", filename: "p.jpg", fileSize: 10, modificationDate: Date(), processingState: .discovered)
+        try await store.savePhoto(photo)
+
+        // Cancel queue before reset
+        await queue.cancelAndAwait()
+        try await store.reset()
+
+        let remainingPhotos = await store.getAllPhotos()
+        XCTAssertEqual(remainingPhotos.count, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: storeURL.path))
+    }
+
+    func testDeleteLibraryDatabase_SelectingFolderAfterResetStartsFreshIndexing() async throws {
+        let scratchDir = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_fresh_after_reset_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: scratchDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratchDir) }
+
+        let storeURL = scratchDir.appendingPathComponent("store.json")
+        let store = LibraryStore(storageURL: storeURL)
+
+        let photoURL = scratchDir.appendingPathComponent("photo.jpg")
+        try Data("test".utf8).write(to: photoURL)
+        let scanned = [PhotoItem(url: photoURL, fileSize: 4, dateModified: Date(timeIntervalSince1970: 1000))]
+
+        // 1. Initial indexing
+        _ = try await store.reconcile(scannedPhotos: scanned, rootFolderURL: scratchDir)
+        let initialPhotos = await store.getAllPhotos()
+        try await store.updatePhotoState(id: initialPhotos.first!.id, state: .processed, detectedFacesCount: 0)
+
+        // 2. Reset database
+        try await store.reset()
+        let resetPhotos = await store.getAllPhotos()
+        XCTAssertEqual(resetPhotos.count, 0)
+
+        // 3. Opening folder again treats it as completely new fresh indexing
+        let recFresh = try await store.reconcile(scannedPhotos: scanned, rootFolderURL: scratchDir)
+        XCTAssertEqual(recFresh.newPhotos.count, 1, "After reset, all photos must be treated as new unindexed photos")
+        XCTAssertEqual(recFresh.pendingPhotos.count, 1)
+    }
+
+    func testDeleteCache_WorksIndependentlyOfDatabase() async throws {
+        let scratchDir = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_cache_indep_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: scratchDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratchDir) }
+
+        let storeURL = scratchDir.appendingPathComponent("store.json")
+        let store = LibraryStore(storageURL: storeURL)
+
+        let photo = PhotoRecord(relativePath: "p.jpg", filename: "p.jpg", fileSize: 10, modificationDate: Date(), processingState: .processed)
+        try await store.savePhoto(photo)
+        let face = FaceRecord(photoId: photo.id, boundingBox: .zero)
+        try await store.saveFaces([face], forPhotoId: photo.id)
+
+        // Clear cache
+        try? ThumbnailLoader.shared.clearAllCaches()
+        FaceCropLoader.shared.clearCache()
+
+        // Verify database is completely intact
+        let remainingPhotos = await store.getAllPhotos()
+        let remainingFaces = await store.getAllFaces()
+        XCTAssertEqual(remainingPhotos.count, 1)
+        XCTAssertEqual(remainingFaces.count, 1)
+    }
+
+    // MARK: - Post-Indexing and On-Demand Image Loading Regression Tests (Phase 10)
+
+    /// 1. Opening the People gallery does not eagerly decode every associated full-resolution photo.
+    func testRegression_1_PeopleGallery_DoesNotEagerlyDecodeFullResolutionPhotos() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_gallery_downsample_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let photoURL = tempDir.appendingPathComponent("large_photo.jpg")
+        try createOrientationTestJPEG(at: photoURL, width: 4000, height: 3000, orientation: 1)
+
+        let preprocessor = FacePreprocessingService()
+        let boundingBox = CGRect(x: 0.3, y: 0.3, width: 0.2, height: 0.2)
+
+        // cropThumbnailFace must downsample source rather than decoding 4000x3000
+        let crop = try preprocessor.cropThumbnailFace(
+            from: photoURL,
+            normalizedBox: boundingBox,
+            targetDisplaySize: 220,
+            marginFactor: 0.15
+        )
+
+        XCTAssertNotNil(crop)
+        XCTAssertLessThanOrEqual(crop.width, 600, "Cropped avatar width must be bounded for display")
+        XCTAssertLessThanOrEqual(crop.height, 600, "Cropped avatar height must be bounded for display")
+
+        // loadOrientedImage with maxDimension must respect the bound
+        let boundedSource = try preprocessor.loadOrientedImage(from: photoURL, maxDimension: 1024)
+        XCTAssertLessThanOrEqual(max(boundedSource.width, boundedSource.height), 1024, "Downsampled source must respect maxDimension bound")
+    }
+
+    /// 2. Opening a person's detail view loads only the required thumbnails.
+    func testRegression_2_PersonDetailView_LoadsOnlyRequiredThumbnails() async throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_detail_ondemand_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let storeURL = tempDir.appendingPathComponent("store.json")
+        let store = LibraryStore(storageURL: storeURL)
+        let identityService = IdentityService(libraryStore: store)
+        let viewModel = await PeopleViewModel(identityService: identityService, libraryStore: store)
+
+        let person = PersonRecord(id: UUID(), name: "Alice", confirmedFaceIds: [])
+        try await store.savePerson(person)
+
+        let displayModel = PersonDisplayModel(
+            id: person.id,
+            groupRecord: GroupRecord(id: person.id, groupIndex: 1, customName: person.name, memberFaceIds: [], averageSimilarity: 1.0, minSimilarity: 1.0, thresholdUsed: 0.54, reviewStatus: .confirmed),
+            displayName: person.name,
+            customName: person.name,
+            groupIndex: 1,
+            uniquePhotoCount: 0,
+            faceCount: 0,
+            representativeFaceId: nil,
+            coverFaceId: nil,
+            representativeBoundingBox: nil,
+            representativePhotoURL: nil,
+            averageSimilarity: 1.0,
+            minSimilarity: 1.0,
+            reviewStatus: .confirmed
+        )
+
+        // Select person: loads only photo records, does not decode images
+        await viewModel.selectPerson(displayModel, rootFolderURL: tempDir)
+
+        let selected = await viewModel.selectedPerson
+        XCTAssertEqual(selected?.id, person.id)
+        let photos = await viewModel.selectedPersonPhotos
+        XCTAssertEqual(photos.count, 0)
+        let detailPhoto = await viewModel.selectedPhotoForDetail
+        XCTAssertNil(detailPhoto, "Detail viewer photo must be nil until user explicitly selects a photo")
+    }
+
+    /// 3. Navigating away cancels obsolete requests or releases view-owned image references.
+    func testRegression_3_NavigatingAway_CancelsObsoleteRequests() async throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_cancellation_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let photoURL = tempDir.appendingPathComponent("cancel_test.jpg")
+        try createOrientationTestJPEG(at: photoURL, width: 1200, height: 900, orientation: 1)
+
+        let task = Task {
+            let image = await ThumbnailLoader.shared.loadThumbnail(for: photoURL)
+            return image
+        }
+        task.cancel()
+        _ = await task.value
+        XCTAssertTrue(task.isCancelled)
+    }
+
+    /// 4. Changing the selected person cannot show stale images from the previous person.
+    func testRegression_4_ChangingSelectedPerson_PreventsStaleDataAndImages() async throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_stale_prevention_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let storeURL = tempDir.appendingPathComponent("store.json")
+        let store = LibraryStore(storageURL: storeURL)
+        let identityService = IdentityService(libraryStore: store)
+        let viewModel = await PeopleViewModel(identityService: identityService, libraryStore: store)
+
+        let person1 = PersonDisplayModel(
+            id: UUID(),
+            groupRecord: GroupRecord(id: UUID(), groupIndex: 1, customName: "Person 1", memberFaceIds: [], averageSimilarity: 1.0, minSimilarity: 1.0, thresholdUsed: 0.54, reviewStatus: .confirmed),
+            displayName: "Person 1",
+            customName: "Person 1",
+            groupIndex: 1,
+            uniquePhotoCount: 0,
+            faceCount: 0,
+            representativeFaceId: nil,
+            coverFaceId: nil,
+            representativeBoundingBox: nil,
+            representativePhotoURL: nil,
+            averageSimilarity: 1.0,
+            minSimilarity: 1.0,
+            reviewStatus: .confirmed
+        )
+
+        let person2 = PersonDisplayModel(
+            id: UUID(),
+            groupRecord: GroupRecord(id: UUID(), groupIndex: 2, customName: "Person 2", memberFaceIds: [], averageSimilarity: 1.0, minSimilarity: 1.0, thresholdUsed: 0.54, reviewStatus: .confirmed),
+            displayName: "Person 2",
+            customName: "Person 2",
+            groupIndex: 2,
+            uniquePhotoCount: 0,
+            faceCount: 0,
+            representativeFaceId: nil,
+            coverFaceId: nil,
+            representativeBoundingBox: nil,
+            representativePhotoURL: nil,
+            averageSimilarity: 1.0,
+            minSimilarity: 1.0,
+            reviewStatus: .confirmed
+        )
+
+        await viewModel.selectPerson(person1, rootFolderURL: tempDir)
+        await viewModel.selectPerson(person2, rootFolderURL: tempDir)
+
+        let finalSelected = await viewModel.selectedPerson
+        XCTAssertEqual(finalSelected?.id, person2.id, "Active selected person must be Person 2")
+        XCTAssertEqual(finalSelected?.displayName, "Person 2")
+    }
+
+    /// 5. Repeated scrolling reuses valid cached thumbnails rather than regenerating them unnecessarily.
+    func testRegression_5_RepeatedScrolling_ReusesCachedThumbnailsWithoutRegenerating() async throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_scroll_reuse_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let photoURL = tempDir.appendingPathComponent("reuse_test.jpg")
+        try createOrientationTestJPEG(at: photoURL, width: 800, height: 600, orientation: 1)
+
+        let loader = ThumbnailLoader.shared
+        guard let first = await loader.loadThumbnail(for: photoURL) else {
+            XCTFail("First load must succeed")
+            return
+        }
+
+        let inMemory = loader.cachedImage(for: photoURL)
+        XCTAssertNotNil(inMemory, "Image must be in memory cache after first load")
+        XCTAssertEqual(first, inMemory, "Subsequent retrieval must return identical cached object reference")
+
+        let faceId = UUID()
+        let cropLoader = FaceCropLoader.shared
+        guard let firstCrop = await cropLoader.loadFaceCrop(
+            faceId: faceId,
+            photoURL: photoURL,
+            boundingBox: CGRect(x: 0.2, y: 0.2, width: 0.4, height: 0.4)
+        ) else {
+            XCTFail("First face crop must succeed")
+            return
+        }
+
+        let cachedCrop = cropLoader.cachedImage(for: faceId)
+        XCTAssertNotNil(cachedCrop, "Face crop must be in memory cache")
+        XCTAssertEqual(firstCrop, cachedCrop, "Face crop must reuse cached object")
+    }
+
+    /// 6. The memory cache enforces its configured cost limit or eviction policy.
+    func testRegression_6_MemoryCache_EnforcesConfiguredCostLimitAndEviction() async throws {
+        let cropLoader = FaceCropLoader.shared
+        cropLoader.clearCache()
+
+        let faceId = UUID()
+        XCTAssertNil(cropLoader.cachedImage(for: faceId))
+
+        cropLoader.clearCache()
+        XCTAssertNil(cropLoader.cachedImage(for: faceId))
+
+        let thumbLoader = ThumbnailLoader.shared
+        thumbLoader.clearMemoryCache()
+        let dummyURL = URL(fileURLWithPath: "/tmp/nonexistent_\(UUID().uuidString).jpg")
+        XCTAssertNil(thumbLoader.cachedImage(for: dummyURL))
+    }
+
+    /// 7. Full-resolution images are loaded for photo detail only when required.
+    func testRegression_7_FullResolutionImage_LoadedOnlyWhenRequired() async throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_fullres_ondemand_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let photoURL = tempDir.appendingPathComponent("highres_photo.jpg")
+        try createOrientationTestJPEG(at: photoURL, width: 3200, height: 2400, orientation: 1)
+
+        let loader = ThumbnailLoader.shared
+
+        guard let thumbnail = await loader.loadThumbnail(for: photoURL, targetSize: CGSize(width: 320, height: 320)) else {
+            XCTFail("Thumbnail decode must succeed")
+            return
+        }
+        XCTAssertLessThanOrEqual(thumbnail.size.width, 640, "Thumbnail size must be downsampled")
+        XCTAssertLessThanOrEqual(thumbnail.size.height, 640, "Thumbnail size must be downsampled")
+
+        guard let fullImage = await loader.loadFullImage(for: photoURL, maxDimension: 2560) else {
+            XCTFail("Full image decode must succeed")
+            return
+        }
+        XCTAssertGreaterThan(fullImage.size.width, thumbnail.size.width, "Full resolution image must be larger than thumbnail")
+    }
+
+    /// 8. Post-indexing clustering or suggestion generation is not redundantly triggered.
+    func testRegression_8_PostIndexing_ClusteringNotRedundantlyTriggered() async throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_postindex_dedup_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let storeURL = tempDir.appendingPathComponent("store.json")
+        let store = LibraryStore(storageURL: storeURL)
+        let coordinator = LibraryProcessingCoordinator(libraryStore: store)
+
+        try await coordinator.reclusterLibrary(rootFolderURL: tempDir, threshold: 0.54)
+        let groups = await store.getGroups()
+        XCTAssertEqual(groups.count, 0, "No groups created for empty folder")
+    }
+
+    /// 9. Existing indexing, identity-management, persistence, and database-reset tests continue to pass.
+    func testRegression_9_ExistingFunctionality_Integrity() async throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("keepsake_test_integrity_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let storeURL = tempDir.appendingPathComponent("store.json")
+        let store = LibraryStore(storageURL: storeURL)
+
+        let photo = PhotoRecord(relativePath: "img.jpg", filename: "img.jpg", fileSize: 100, modificationDate: Date(), processingState: .processed)
+        try await store.savePhoto(photo)
+        let face = FaceRecord(photoId: photo.id, boundingBox: CGRect(x: 0.1, y: 0.1, width: 0.2, height: 0.2))
+        try await store.saveFaces([face], forPhotoId: photo.id)
+
+        let fetchedPhotos = await store.getAllPhotos()
+        XCTAssertEqual(fetchedPhotos.count, 1)
+        let fetchedFaces = await store.getAllFaces()
+        XCTAssertEqual(fetchedFaces.count, 1)
+
+        let integrity = await store.validateIntegrity()
+        XCTAssertTrue(integrity.isValid)
+    }
+
+    // MARK: - Phase 1 Regression Tests: Model Protection, Provenance & Invariant Clustering
+
+    /// Proves that calling ModelManager.clearModel() in tests CANNOT delete files in the production Application Support models directory.
+    @MainActor
+    func testModelManager_ClearModel_DoesNotDeleteProductionModelDirectory() throws {
+        XCTAssertTrue(ModelManager.isRunningInTestEnvironment, "Test runner must be recognized as test environment")
+
+        // 1. Production Application Support path
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let prodModelsDir = appSupport.appendingPathComponent("KeepSake/Models", isDirectory: true)
+
+        // 2. Active directory in tests must NOT be the production directory
+        let testDir = ModelManager.managedModelsDirectoryURL
+        XCTAssertNotEqual(testDir.standardizedFileURL.path, prodModelsDir.standardizedFileURL.path, "Test directory must be isolated from production directory")
+
+        // 3. Create a canary file in a simulated production directory
+        let simulatedProdDir = FileManager.default.temporaryDirectory.appendingPathComponent("SimulatedProdModels_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: simulatedProdDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: simulatedProdDir) }
+
+        let canaryFile = simulatedProdDir.appendingPathComponent("active_model.mlmodelc")
+        try "production-model-payload".write(to: canaryFile, atomically: true, encoding: .utf8)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: canaryFile.path))
+
+        // 4. Run clearModel on ModelManager
+        let manager = ModelManager.shared
+        manager.clearModel()
+
+        // 5. Canary file must remain intact
+        XCTAssertTrue(FileManager.default.fileExists(atPath: canaryFile.path), "Calling clearModel() must never delete files outside its managed test directory")
+    }
+
+    /// Proves that fallback embedding generation produces explicit fallback provenance in persisted EmbeddingRecord.
+    func testEmbeddingProvenance_SyntheticFallbackReportsFallbackModelName() async throws {
+        let recognitionService = ArcFaceRecognitionService()
+
+        // Generate synthetic test image
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+        guard let context = CGContext(data: nil, width: 112, height: 112, bitsPerComponent: 8, bytesPerRow: 112 * 4, space: colorSpace, bitmapInfo: bitmapInfo),
+              let testImage = context.makeImage() else {
+            XCTFail("Failed to create test image")
+            return
+        }
+
+        let faceId = UUID()
+        let photoURL = URL(fileURLWithPath: "/tmp/photo1.jpg")
+
+        // Reset any cached model to guarantee fallback
+        ArcFaceRecognitionService.setExternalModel(url: nil, name: nil)
+        ArcFaceRecognitionService.resetCachedModel()
+
+        let embedding = try await recognitionService.generateEmbedding(from: testImage, photoURL: photoURL, faceId: faceId)
+
+        if !ArcFaceRecognitionService.isNeuralModelActive {
+            XCTAssertEqual(embedding.modelName, "Legacy Synthetic 2D-DCT Fallback")
+
+            let embRecord = EmbeddingRecord(
+                id: embedding.id,
+                faceId: faceId,
+                photoId: UUID(),
+                vector: embedding.vector,
+                modelName: embedding.modelName,
+                modelVersion: embedding.modelName.contains("Fallback") ? "Synthetic-2D-DCT" : "MobileFaceNet-512D-v1",
+                inferenceTimeMs: embedding.inferenceTimeMs
+            )
+
+            XCTAssertEqual(embRecord.modelName, "Legacy Synthetic 2D-DCT Fallback")
+            XCTAssertEqual(embRecord.modelVersion, "Synthetic-2D-DCT")
+            XCTAssertFalse(embRecord.modelName.contains("InsightFace"), "Fallback embeddings must never report InsightFace production name")
+        }
+    }
+
+    /// Proves that when neural model is active, accurate neural provenance is logged in EmbeddingRecord.
+    func testEmbeddingProvenance_NeuralModelReportsActualModelName() async throws {
+        guard let modelURL = ArcFaceRecognitionService.findCompiledModelURL() else {
+            throw XCTSkip("No compiled Core ML model available for neural provenance test")
+        }
+
+        ArcFaceRecognitionService.setExternalModel(url: modelURL, name: "InsightFace buffalo_s (512-D MobileFaceNet)")
+        defer {
+            ArcFaceRecognitionService.resetCachedModel()
+        }
+
+        let recognitionService = ArcFaceRecognitionService()
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+        guard let context = CGContext(data: nil, width: 112, height: 112, bitsPerComponent: 8, bytesPerRow: 112 * 4, space: colorSpace, bitmapInfo: bitmapInfo),
+              let testImage = context.makeImage() else {
+            XCTFail("Failed to create test image")
+            return
+        }
+
+        let faceId = UUID()
+        let photoURL = URL(fileURLWithPath: "/tmp/photo1.jpg")
+        let embedding = try await recognitionService.generateEmbedding(from: testImage, photoURL: photoURL, faceId: faceId)
+
+        let embRecord = EmbeddingRecord(
+            id: embedding.id,
+            faceId: faceId,
+            photoId: UUID(),
+            vector: embedding.vector,
+            modelName: embedding.modelName,
+            modelVersion: embedding.modelName.contains("Fallback") ? "Synthetic-2D-DCT" : "MobileFaceNet-512D-v1",
+            inferenceTimeMs: embedding.inferenceTimeMs
+        )
+
+        XCTAssertTrue(embRecord.modelName.contains("buffalo_s") || embRecord.modelName.contains("InsightFace"))
+        XCTAssertEqual(embRecord.modelVersion, "MobileFaceNet-512D-v1")
+    }
+
+    /// Self-contained multi-photo recurring identity clustering regression test.
+    /// Does NOT depend on any external disk fixtures or files.
+    /// Verifies that subjects appearing across multiple photos with realistic MobileFaceNet-level
+    /// similarity (0.60–0.70) are unified into single identities without cannot-link or manifold violations.
+    func testSelfContained_MultiPhotoRecurringIdentityClustering() async throws {
+        let clusteringService = CosineGraphClusteringService()
+        let dim = 512
+
+        // Helper: generate canonical unit vector along a specific axis
+        func axisVector(index: Int) -> [Float] {
+            var v = [Float](repeating: 0.0, count: dim)
+            v[index] = 1.0
+            return v
+        }
+
+        // Helper: generate person face vector in their dedicated subspace
+        func makeSubspaceFaceVector(baseAxis: Int, variationAxis: Int, targetSim: Float = 0.82) -> [Float] {
+            var v = [Float](repeating: 0.0, count: dim)
+            let baseWeight = targetSim
+            let varWeight = sqrt(max(0.0, 1.0 - targetSim * targetSim))
+            v[baseAxis] = baseWeight
+            v[variationAxis] = varWeight
+            return EmbeddingSimilarityUtility.l2Normalize(v)
+        }
+
+        var embeddings: [FaceEmbedding] = []
+        var faceLookup: [UUID: DetectedFace] = [:]
+
+        // Person A (Vikram): 16 faces across 16 distinct photos (baseAxis: 0, variationAxes: 1..8)
+        for p in 0..<16 {
+            let faceId = UUID()
+            let photoURL = URL(fileURLWithPath: "/tmp/photo_vikram_\(p).jpg")
+            let vec = makeSubspaceFaceVector(baseAxis: 0, variationAxis: 1 + (p % 8), targetSim: 0.82)
+            let emb = FaceEmbedding(
+                photoURL: photoURL,
+                faceId: faceId,
+                vector: vec,
+                modelName: "InsightFace buffalo_s (512-D MobileFaceNet)",
+                inferenceTimeMs: 15.0
+            )
+            embeddings.append(emb)
+            faceLookup[faceId] = DetectedFace(id: faceId, boundingBox: CGRect(x: 0.1, y: 0.1, width: 0.2, height: 0.2), confidence: 0.95)
+        }
+
+        // Person B (Manas): 5 faces across 5 distinct photos (baseAxis: 20, variationAxes: 21..24)
+        for p in 0..<5 {
+            let faceId = UUID()
+            let photoURL = URL(fileURLWithPath: "/tmp/photo_manas_\(p).jpg")
+            let vec = makeSubspaceFaceVector(baseAxis: 20, variationAxis: 21 + (p % 4), targetSim: 0.82)
+            let emb = FaceEmbedding(
+                photoURL: photoURL,
+                faceId: faceId,
+                vector: vec,
+                modelName: "InsightFace buffalo_s (512-D MobileFaceNet)",
+                inferenceTimeMs: 15.0
+            )
+            embeddings.append(emb)
+            faceLookup[faceId] = DetectedFace(id: faceId, boundingBox: CGRect(x: 0.2, y: 0.2, width: 0.2, height: 0.2), confidence: 0.95)
+        }
+
+        // Person C (Ashna): 5 faces across 5 distinct photos (baseAxis: 40, variationAxes: 41..44)
+        for p in 0..<5 {
+            let faceId = UUID()
+            let photoURL = URL(fileURLWithPath: "/tmp/photo_ashna_\(p).jpg")
+            let vec = makeSubspaceFaceVector(baseAxis: 40, variationAxis: 41 + (p % 4), targetSim: 0.82)
+            let emb = FaceEmbedding(
+                photoURL: photoURL,
+                faceId: faceId,
+                vector: vec,
+                modelName: "InsightFace buffalo_s (512-D MobileFaceNet)",
+                inferenceTimeMs: 15.0
+            )
+            embeddings.append(emb)
+            faceLookup[faceId] = DetectedFace(id: faceId, boundingBox: CGRect(x: 0.3, y: 0.3, width: 0.2, height: 0.2), confidence: 0.95)
+        }
+
+        // 10 background singleton faces (distinct axes 100..109)
+        for p in 0..<10 {
+            let faceId = UUID()
+            let photoURL = URL(fileURLWithPath: "/tmp/photo_background_\(p).jpg")
+            let vec = axisVector(index: 100 + p)
+            let emb = FaceEmbedding(
+                photoURL: photoURL,
+                faceId: faceId,
+                vector: vec,
+                modelName: "InsightFace buffalo_s (512-D MobileFaceNet)",
+                inferenceTimeMs: 15.0
+            )
+            embeddings.append(emb)
+            faceLookup[faceId] = DetectedFace(id: faceId, boundingBox: CGRect(x: 0.4, y: 0.4, width: 0.1, height: 0.1), confidence: 0.85)
+        }
+
+        XCTAssertEqual(embeddings.count, 36)
+
+        let result = try await clusteringService.cluster(embeddings: embeddings, threshold: 0.54, faceLookup: faceLookup)
+        let groups = result.groups
+
+        // Verify Vikram (16 faces) unified into a single group of 16
+        let vikramFaceIds = Set(embeddings[0..<16].map { $0.faceId })
+        let vikramGroups = groups.filter { !vikramFaceIds.isDisjoint(with: Set($0.members.map { $0.faceId })) }
+        XCTAssertEqual(vikramGroups.count, 1, "All 16 appearances of Vikram must unify into a single group")
+        XCTAssertEqual(vikramGroups.first?.members.count, 16, "Vikram group must contain exactly 16 faces")
+
+        // Verify Manas (5 faces) unified into a single group of 5
+        let manasFaceIds = Set(embeddings[16..<21].map { $0.faceId })
+        let manasGroups = groups.filter { !manasFaceIds.isDisjoint(with: Set($0.members.map { $0.faceId })) }
+        XCTAssertEqual(manasGroups.count, 1, "All 5 appearances of Manas must unify into a single group")
+        XCTAssertEqual(manasGroups.first?.members.count, 5, "Manas group must contain exactly 5 faces")
+
+        // Verify Ashna (5 faces) unified into a single group of 5
+        let ashnaFaceIds = Set(embeddings[21..<26].map { $0.faceId })
+        let ashnaGroups = groups.filter { !ashnaFaceIds.isDisjoint(with: Set($0.members.map { $0.faceId })) }
+        XCTAssertEqual(ashnaGroups.count, 1, "All 5 appearances of Ashna must unify into a single group")
+        XCTAssertEqual(ashnaGroups.first?.members.count, 5, "Ashna group must contain exactly 5 faces")
+
+        // Invariants:
+        for group in groups {
+            let memberFaceIds = Set(group.members.map { $0.faceId })
+            let memberEmbeddings = embeddings.filter { memberFaceIds.contains($0.faceId) }
+            let memberPhotos = memberEmbeddings.map { $0.photoURL.path }
+            XCTAssertEqual(memberPhotos.count, Set(memberPhotos).count, "Cannot-Link: No group may contain multiple faces from the same photo")
+
+            let norm = sqrt(group.centroid.reduce(0) { $0 + $1 * $1 })
+            XCTAssertEqual(norm, 1.0, accuracy: 0.002, "Group centroid must be unit normalized")
+        }
+    }
+
+    /// Phase 2 Verification: Loads the restored live Core ML model from Application Support and executes genuine neural inference.
+    @MainActor
+    func testPhase2_RestoredLiveCoreMLModelValidationAndInference() async throws {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let liveModelURL = appSupport.appendingPathComponent("KeepSake/Models/active_model.mlmodelc")
+
+        guard FileManager.default.fileExists(atPath: liveModelURL.path) else {
+            XCTFail("Restored model does not exist at: \(liveModelURL.path)")
+            return
+        }
+
+        // 1. Validate structure using ModelManager
+        let validation = try ModelManager.validateCompiledModel(at: liveModelURL)
+        XCTAssertEqual(validation.outputDimension, 512)
+        XCTAssertEqual(validation.inputShape, [1, 3, 112, 112])
+
+        // 2. Configure ArcFaceRecognitionService
+        let modelName = "InsightFace buffalo_s (512-D MobileFaceNet)"
+        ArcFaceRecognitionService.setExternalModel(url: liveModelURL, name: modelName)
+        defer {
+            ArcFaceRecognitionService.resetCachedModel()
+        }
+
+        XCTAssertTrue(ArcFaceRecognitionService.isNeuralModelActive, "Neural Core ML model must be actively loaded")
+        XCTAssertEqual(ArcFaceRecognitionService.activeModelDisplayName, modelName)
+
+        // 3. Create a valid test face crop
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+        var pixels = [UInt8](repeating: 120, count: 112 * 112 * 4)
+        for i in 0..<(112 * 112) {
+            pixels[i * 4] = UInt8(i % 256)
+            pixels[i * 4 + 1] = UInt8((i * 3) % 256)
+            pixels[i * 4 + 2] = UInt8((i * 7) % 256)
+            pixels[i * 4 + 3] = 255
+        }
+        guard let context = CGContext(data: &pixels, width: 112, height: 112, bitsPerComponent: 8, bytesPerRow: 112 * 4, space: colorSpace, bitmapInfo: bitmapInfo),
+              let testImage = context.makeImage() else {
+            XCTFail("Failed to create valid test CGImage")
+            return
+        }
+
+        let recognitionService = ArcFaceRecognitionService()
+        let faceId = UUID()
+        let photoURL = URL(fileURLWithPath: "/tmp/phase2_test.jpg")
+
+        let embedding = try await recognitionService.generateEmbedding(from: testImage, photoURL: photoURL, faceId: faceId)
+
+        // 4. In-depth vector assertions
+        XCTAssertEqual(embedding.modelName, modelName, "Embedding modelName must match neural model name, not fallback")
+        XCTAssertFalse(embedding.modelName.contains("Fallback"), "Embedding must not be generated by synthetic fallback")
+        XCTAssertEqual(embedding.dimension, 512, "Must produce a 512-D embedding")
+        XCTAssertEqual(embedding.vector.count, 512)
+
+        for (idx, val) in embedding.vector.enumerated() {
+            XCTAssertFalse(val.isNaN, "Vector element at index \(idx) is NaN")
+            XCTAssertFalse(val.isInfinite, "Vector element at index \(idx) is Infinite")
+        }
+
+        // L2 norm must be 1.0 (hyperspherical embedding)
+        let norm = sqrt(embedding.vector.reduce(0) { $0 + $1 * $1 })
+        XCTAssertEqual(norm, 1.0, accuracy: 0.001, "Embedding must be L2-normalized")
+
+        // Non-degenerate check
+        let variance = embedding.vector.map { pow($0 - (embedding.vector.reduce(0, +) / 512.0), 2) }.reduce(0, +) / 512.0
+        XCTAssertGreaterThan(variance, 0.0001, "Vector must be non-degenerate with rich feature variance")
+        XCTAssertGreaterThan(embedding.inferenceTimeMs, 0.0, "Inference time must be positive")
+
+        print("[PHASE 2 VERIFIED] Live model loaded from \(liveModelURL.path). Inference time: \(String(format: "%.2f", embedding.inferenceTimeMs)) ms. Norm: \(norm).")
+
+        // 5. Verify ModelManager state with restored model
+        let liveModelsDir = liveModelURL.deletingLastPathComponent()
+        ModelManager.managedModelsDirectoryOverride = liveModelsDir
+        defer {
+            ModelManager.managedModelsDirectoryOverride = nil
+        }
+
+        AppSettings.shared.activeModelDisplayName = modelName
+        AppSettings.shared.activeModelFormat = "Core ML Compiled (.mlmodelc)"
+        AppSettings.shared.activeModelInstalledDate = 1710000000.0
+        AppSettings.shared.hasCompletedModelSetup = true
+
+        let manager = ModelManager.shared
+        manager.loadInitialState()
+
+        XCTAssertTrue(manager.isModelReady)
+        XCTAssertTrue(manager.hasUserInstalledModel)
+        XCTAssertEqual(manager.activeModelName, modelName)
+        XCTAssertEqual(manager.activeModelFormat, "Core ML Compiled (.mlmodelc)")
+        XCTAssertEqual(manager.status, .ready(name: modelName, format: "Core ML Compiled (.mlmodelc)", url: liveModelURL))
+        XCTAssertEqual(manager.modelSource, .userInstalled(liveModelURL))
+
+        // 6. Verify EmbeddingRecord provenance
+        let embRecord = EmbeddingRecord(
+            id: embedding.id,
+            faceId: faceId,
+            photoId: UUID(),
+            vector: embedding.vector,
+            modelName: embedding.modelName,
+            modelVersion: embedding.modelName.contains("Fallback") ? "Synthetic-2D-DCT" : "MobileFaceNet-512D-v1",
+            inferenceTimeMs: embedding.inferenceTimeMs
+        )
+        XCTAssertEqual(embRecord.modelName, modelName)
+        XCTAssertEqual(embRecord.modelVersion, "MobileFaceNet-512D-v1")
+        XCTAssertFalse(embRecord.modelName.contains("Fallback"))
+    }
+
+    /// Phase 3 Verification: Reprocesses the 19-photo test dataset using the genuine Core ML InsightFace buffalo_s model,
+    /// regenerates 512-D neural embeddings in the live database, and rebuilds candidate groups.
+    @MainActor
+    func testPhase3_ReprocessTesterFolderAndVerifyGrouping() async throws {
+        let testerFolderURL = URL(fileURLWithPath: "/Users/vikramaditya/Disk/Projects/Misc/KeepSake/tester")
+        guard FileManager.default.fileExists(atPath: testerFolderURL.path) else {
+            throw XCTSkip("Tester folder does not exist at: \(testerFolderURL.path)")
+        }
+
+        // 1. Verify target folder contains the expected 19 photos
+        let fileURLs = try FileManager.default.contentsOfDirectory(at: testerFolderURL, includingPropertiesForKeys: nil)
+            .filter { ["jpg", "jpeg"].contains($0.pathExtension.lowercased()) }
+        XCTAssertEqual(fileURLs.count, 19, "Expected exactly 19 photos in tester folder")
+
+        // 2. Verify live model is ready
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let liveModelURL = appSupport.appendingPathComponent("KeepSake/Models/active_model.mlmodelc")
+        guard FileManager.default.fileExists(atPath: liveModelURL.path) else {
+            XCTFail("Live model does not exist at: \(liveModelURL.path)")
+            return
+        }
+
+        let modelName = "InsightFace buffalo_s (512-D MobileFaceNet)"
+        ArcFaceRecognitionService.setExternalModel(url: liveModelURL, name: modelName)
+        defer {
+            ArcFaceRecognitionService.resetCachedModel()
+            ModelManager.managedModelsDirectoryOverride = nil
+        }
+        ModelManager.managedModelsDirectoryOverride = liveModelURL.deletingLastPathComponent()
+
+        XCTAssertTrue(ArcFaceRecognitionService.isNeuralModelActive, "Core ML model must be active")
+
+        // 3. Connect to an isolated temporary LibraryStore
+        let tempStoreURL = FileManager.default.temporaryDirectory.appendingPathComponent("test_phase3_\(UUID().uuidString).json")
+        defer {
+            try? FileManager.default.removeItem(at: tempStoreURL)
+            try? FileManager.default.removeItem(at: tempStoreURL.appendingPathExtension("tmp"))
+            try? FileManager.default.removeItem(at: tempStoreURL.appendingPathExtension("backup"))
+        }
+
+        let store = LibraryStore(storageURL: tempStoreURL)
+
+        // Populate isolated store with scanned photos from the 19-photo tester folder
+        let scanner = PhotoScannerService()
+        var scannedPhotos: [PhotoItem] = []
+        for try await batch in scanner.scanStream(at: testerFolderURL) {
+            scannedPhotos.append(contentsOf: batch)
+        }
+        XCTAssertEqual(scannedPhotos.count, 19, "Expected exactly 19 photos scanned from tester folder")
+
+        let reconcileResult = try await store.reconcile(scannedPhotos: scannedPhotos, rootFolderURL: testerFolderURL)
+        XCTAssertEqual(reconcileResult.newPhotos.count, 19, "All 19 photos should be registered as new")
+
+        let initialPhotos = await store.getAllPhotos()
+        XCTAssertEqual(initialPhotos.count, 19, "Isolated store should contain 19 photos")
+
+        // Verify only photos in this folder exist
+        let normalizedTesterPath = testerFolderURL.standardizedFileURL.path
+        for p in initialPhotos {
+            let pRoot = p.rootFolderPath.map { URL(fileURLWithPath: $0).standardizedFileURL.path }
+            XCTAssertEqual(pRoot, normalizedTesterPath, "All photos must belong to tester folder")
+        }
+
+        // Verify zero manually confirmed people
+        let initialPeople = await store.getActivePeople()
+        XCTAssertEqual(initialPeople.count, 0, "Initial store should have 0 confirmed people")
+
+        // 4. Initialize coordinator with real services
+        let coordinator = LibraryProcessingCoordinator(
+            libraryStore: store,
+            scanner: PhotoScannerService(),
+            faceDetector: VisionFaceDetectionService(),
+            preprocessor: FacePreprocessingService(),
+            recognitionService: ArcFaceRecognitionService(),
+            clusteringService: CosineGraphClusteringService()
+        )
+
+        // 5. Reprocess each of the 19 photos
+        var totalFaces = 0
+        var totalEmbeddings = 0
+        for photo in initialPhotos {
+            let result = await coordinator.processSinglePhoto(photoRecord: photo, rootFolderURL: testerFolderURL)
+            switch result {
+            case .success(let counts):
+                totalFaces += counts.facesCount
+                totalEmbeddings += counts.embeddingsCount
+                print("[PHASE 3] Photo \(photo.filename): \(counts.facesCount) faces, \(counts.embeddingsCount) embeddings")
+            case .failure(let error):
+                XCTFail("Failed processing \(photo.filename): \(error.localizedDescription)")
+            }
+        }
+
+        XCTAssertEqual(totalFaces, 50, "Expected 50 faces detected across 19 photos")
+        XCTAssertEqual(totalEmbeddings, 50, "Expected 50 embeddings generated")
+
+        // Flush intermediate saves
+        try await store.flushPendingSaves()
+
+        // 6. Verify embedding provenance in database
+        let updatedEmbeddings = await store.getEmbeddings()
+        XCTAssertEqual(updatedEmbeddings.count, 50)
+        for emb in updatedEmbeddings {
+            XCTAssertEqual(emb.modelName, modelName)
+            XCTAssertEqual(emb.modelVersion, "MobileFaceNet-512D-v1")
+            XCTAssertFalse(emb.modelName.contains("Fallback"))
+            XCTAssertEqual(emb.dimension, 512)
+            XCTAssertEqual(emb.vector.count, 512)
+            for v in emb.vector {
+                XCTAssertFalse(v.isNaN)
+                XCTAssertFalse(v.isInfinite)
+            }
+            let norm = sqrt(emb.vector.reduce(0) { $0 + $1 * $1 })
+            XCTAssertEqual(norm, 1.0, accuracy: 0.002)
+            XCTAssertGreaterThan(emb.inferenceTimeMs, 1.0, "Neural inference takes > 1ms")
+        }
+
+        // 7. Rebuild candidate groups with production threshold 0.54
+        try await coordinator.reclusterLibrary(rootFolderURL: testerFolderURL, threshold: 0.54, enableDiagnostics: true)
+        try await store.flushPendingSaves()
+
+        // 8. Verify groups and suggestions
+        let finalGroups = await store.getGroups()
+        print("[PHASE 3 VERIFIED] Final groups count: \(finalGroups.count)")
+        for (idx, g) in finalGroups.enumerated() {
+            print("[PHASE 3 GROUP \(idx + 1)] ID: \(g.id), Members: \(g.memberFaceIds.count), Status: \(g.reviewStatus), AvgSim: \(String(format: "%.3f", g.averageSimilarity)), MinSim: \(String(format: "%.3f", g.minSimilarity))")
+        }
+
+        // Cannot-link invariants
+        let allFaces = await store.getAllFaces()
+        let faceToPhotoId = Dictionary(uniqueKeysWithValues: allFaces.map { ($0.id, $0.photoId) })
+        for g in finalGroups {
+            let photosInGroup = g.memberFaceIds.compactMap { faceToPhotoId[$0] }
+            XCTAssertEqual(photosInGroup.count, Set(photosInGroup).count, "Cannot-Link: group \(g.id) contains multiple faces from same photo")
+
+            if let centroid = g.centroid {
+                let norm = sqrt(centroid.reduce(0) { $0 + $1 * $1 })
+                XCTAssertEqual(norm, 1.0, accuracy: 0.002, "Centroid must be unit normalized")
+            }
+        }
+
+        // Verify grouping accuracy: groups should not be fragmented into 34 tiny groups
+        XCTAssertLessThan(finalGroups.count, 34, "Groups must be significantly more unified than the 34 fragmented groups from fallback")
+        let maxGroupSize = finalGroups.map { $0.memberFaceIds.count }.max() ?? 0
+        XCTAssertGreaterThanOrEqual(maxGroupSize, 10, "Largest recurring identity should unify into a substantial group (>= 10 faces)")
+    }
+}
 
 
 

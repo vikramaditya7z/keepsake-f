@@ -13,6 +13,11 @@ KeepSake is distributed as a universal standalone disk image (`.dmg`) for macOS:
 * 📦 **[Download KeepSake for macOS (DMG)](dist/KeepSake.dmg)**
 * 🚀 **[GitHub Releases & Release Notes](https://github.com/vikramaditya7z/keepsake-f/releases)**
 
+**Verified Release DMG Checksum:**
+```
+SHA-256: 89daac3800920da97b0a1a9356279c15388127822c27c446df857443fd6354a4
+```
+
 ---
 
 ## macOS Security Warning: “KeepSake” Not Opened
@@ -76,10 +81,12 @@ Open **KeepSake.app** from `/Applications`. If macOS displays a security warning
 When the app opens, click **Choose Folder** (or click the **+** button in the sidebar) and select any directory containing your photos (e.g. `~/Pictures` or an external drive). KeepSake accesses folders strictly with security-scoped bookmarks without modifying, moving, or re-encoding your original photos.
 
 ### Step 4: Set Up the Face Recognition Model
-To recognize and cluster people across photos, KeepSake uses a MobileFaceNet ArcFace neural network. On first launch, KeepSake displays the **Model Setup** sheet:
+To recognize and cluster people across photos, KeepSake uses a MobileFaceNet ArcFace neural network. Because model weights are third-party research artifacts subject to an academic non-commercial license, users must independently obtain the weights and comply with the applicable model license.
+
+On first launch, KeepSake displays the **Model Setup** sheet:
 
 #### Option A: Automatic Local ONNX Conversion (Recommended)
-1. Download `buffalo_s.zip` from the [InsightFace v0.7.0 Release](https://github.com/deepinsight/insightface/releases/tag/v0.7).
+1. Download `buffalo_s.zip` from the official [InsightFace v0.7.0 Release](https://github.com/deepinsight/insightface/releases/tag/v0.7).
 2. Unzip `buffalo_s.zip` and locate `w600k_mbf.onnx`.
 3. In KeepSake's setup window, click **Choose ONNX Model…** and select `w600k_mbf.onnx`.
 4. KeepSake converts the ONNX model locally using its bundled on-device converter, validates input/output tensors ($1 \times 3 \times 112 \times 112 \to 512\text{D}$), compiles it to Core ML, and installs it automatically into your Application Support directory.
@@ -99,12 +106,20 @@ Once the model is installed, KeepSake automatically:
 - **Naming**: Click on any person to assign names or merge identities.
 - **Suggestion Queue**: Review candidate face matches with high confidence and accept or reject them with a single click.
 
+### Troubleshooting & FAQs
+
+* **Model conversion reports invalid dimensions or fails:** Ensure you selected `w600k_mbf.onnx` extracted from `buffalo_s.zip` (input tensor shape: $1 \times 3 \times 112 \times 112 \to 512\text{D}$). KeepSake validates tensor shapes prior to Core ML compilation.
+* **macOS Gatekeeper blocks opening:** Follow the [macOS Security Warning](#macos-security-warning-keepsake-not-opened) instructions. In **System Settings → Privacy & Security**, click **Open Anyway**.
+* **Photos folder permission issues:** When prompted by macOS, grant KeepSake access to your selected photos directory. You can verify permissions under **System Settings → Privacy & Security → Files and Folders**.
+* **Model setup re-prompted on launch:** If model setup appears again, verify that `~/Library/Application Support/KeepSake/Models/active_model.mlmodelc` exists and has not been moved or deleted.
+
 ---
 
 ## Key Features
 
 - **🔒 100% On-Device & Private**: Zero network connections, zero telemetry, zero analytics. Your personal photos, embeddings, and metadata never leave your Mac.
 - **⚡ Native Apple Silicon & Intel Universal**: Built in Swift and SwiftUI, leveraging Apple Neural Engine (ANE), Metal GPU, and Accelerate framework.
+- **🚀 Memory-Optimized Pipeline**: Efficient RAM profile with bounded worker concurrency, cooperative cancellation, integer-indexed graph clustering, and scoped autorelease pools capable of indexing thousands of photos while keeping memory well under control.
 - **🧠 512-Dimensional Deep Embeddings**: Accurate face representation using MobileFaceNet ArcFace embeddings.
 - **🚫 Cannot-Link Constraint Enforcement**: Two faces detected within the same photo are mathematically prohibited from merging into the same person cluster, preventing false positive conflations.
 - **🖼️ Sharp, Orientation-Correct Thumbnails**: High-performance two-tier disk cache preserving EXIF orientation tags and rendering crisp Retina thumbnails.
@@ -219,16 +234,11 @@ The resulting `KeepSake.app` will be in:
 Run the full suite of automated unit and integration tests:
 
 ```bash
-# 1. Build test bundle
 xcodebuild \
   -project KeepSake.xcodeproj \
   -scheme KeepSakeTests \
-  -configuration Debug \
   -derivedDataPath ./build/DerivedData \
-  build
-
-# 2. Run unit tests
-xcrun xctest build/DerivedData/Build/Products/Debug/KeepSake.app/Contents/PlugIns/KeepSakeTests.xctest
+  test
 ```
 
 ### 4. Create Distributable DMG

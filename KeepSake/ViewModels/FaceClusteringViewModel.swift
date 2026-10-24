@@ -88,8 +88,8 @@ final class FaceClusteringViewModel: ObservableObject {
                             faceId: face.id,
                             photoId: face.id,
                             vector: embedding.vector,
-                            modelName: recognitionService.modelName,
-                            modelVersion: "v1",
+                            modelName: embedding.modelName,
+                            modelVersion: embedding.modelName.contains("Fallback") ? "Synthetic-2D-DCT" : "v1",
                             inferenceTimeMs: embedding.inferenceTimeMs
                         )
                         embeddingRecords.append(embRecord)

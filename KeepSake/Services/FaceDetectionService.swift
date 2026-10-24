@@ -77,7 +77,8 @@ struct VisionFaceDetectionService: FaceDetectionServiceProtocol {
 
     /// Detects face rectangles and landmarks from an image file URL using Apple Vision.
     func detectFaces(in imageURL: URL) async throws -> [DetectedFace] {
-        return try await Task.detached(priority: .userInitiated) {
+        try Task.checkCancellation()
+        return try autoreleasepool {
             let handler = VNImageRequestHandler(url: imageURL, options: [:])
             let request = VNDetectFaceLandmarksRequest()
 
@@ -99,12 +100,13 @@ struct VisionFaceDetectionService: FaceDetectionServiceProtocol {
                     landmarks: landmarks
                 )
             }
-        }.value
+        }
     }
 
     /// Detects face rectangles and landmarks from a CGImage using Apple Vision.
     func detectFaces(in cgImage: CGImage) async throws -> [DetectedFace] {
-        return try await Task.detached(priority: .userInitiated) {
+        try Task.checkCancellation()
+        return try autoreleasepool {
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
             let request = VNDetectFaceLandmarksRequest()
 
@@ -126,6 +128,6 @@ struct VisionFaceDetectionService: FaceDetectionServiceProtocol {
                     landmarks: landmarks
                 )
             }
-        }.value
+        }
     }
 }
