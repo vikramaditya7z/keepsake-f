@@ -1,221 +1,244 @@
 # KeepSake 📸
 
-> **Native, Private, On-Device Face Recognition & Photo Organization for macOS**
+> **Native, private, on-device face recognition and photo organization for macOS.**
 
-KeepSake is a high-performance macOS photo management application that detects, indexes, and clusters faces directly on your Mac. Using Apple Vision for face detection, Core ML for neural feature extraction, and constrained hierarchical clustering, KeepSake organizes personal photo libraries into people and events with zero cloud dependency.
-
----
-
-## Download for macOS
-
-KeepSake is distributed as a universal standalone disk image (`.dmg`) for macOS:
-
-* 📦 **[Download KeepSake for macOS (DMG)](dist/KeepSake.dmg)**
-* 🚀 **[GitHub Releases & Release Notes](https://github.com/vikramaditya7z/keepsake-f/releases)**
-
-**Verified Release DMG Checksum:**
-```
-SHA-256: 89daac3800920da97b0a1a9356279c15388127822c27c446df857443fd6354a4
-```
+KeepSake organizes personal photo libraries by detecting faces, generating neural face embeddings, and grouping recurring identities directly on your Mac. Built with Swift, SwiftUI, Apple Vision, and Core ML, it brings intelligent photo organization to macOS without relying on cloud-based face recognition.
 
 ---
 
-## macOS Security Warning: “KeepSake” Not Opened
+# 🧠 Model Setup — Read This First
 
-When launching KeepSake for the first time after downloading and installing from the DMG, macOS Gatekeeper may block the application and display:
+**KeepSake requires a compatible face-recognition model to perform neural face recognition and organize people across your photos.**
 
-> **“KeepSake” Not Opened**  
-> Apple could not verify “KeepSake” is free of malware that may harm your Mac or compromise your privacy.
+The model setup popup may not appear automatically on first launch. If you don't see it, you can access model configuration through **Settings → Model**.
 
-### Why this happens
+KeepSake supports two model setup methods. Most users should start with Option A.
 
-The current v1.0.0 release of KeepSake is distributed independently and is **not signed or notarized with an Apple Developer ID**. Because Apple's automated notarization service has not inspected the executable, macOS Gatekeeper blocks opening by default. This security alert is standard macOS behavior for unnotarized software downloaded from the internet and does not by itself establish that the application contains malware. However, Apple has not verified KeepSake, and the developers do not claim that Apple has validated the software.
+## Option A — Automatic ONNX-to-Core ML Conversion (Recommended)
 
-For official information on macOS app verification, see Apple's documentation:  
-👉 [Apple Support: Safely open apps on your Mac](https://support.apple.com/en-in/102445)
+KeepSake includes a local model converter, so you don't need to set up a separate Python environment.
 
-### How to open KeepSake
+### Step 1: Download the model
 
-If you downloaded KeepSake directly from the [official GitHub repository](https://github.com/vikramaditya7z/keepsake-f) and trust the application, you can use one of the following macOS override methods:
+1. Open the official [InsightFace v0.7 release page](https://github.com/deepinsight/insightface/releases/tag/v0.7).
+2. Download `buffalo_s.zip`.
+3. Extract the archive.
+4. Locate the file named `w600k_mbf.onnx` inside the extracted files.
 
-#### Method 1 — Open Anyway in Privacy & Security (Recommended)
-1. On the Gatekeeper warning dialog, click **Done** (or **Cancel**).
-2. Open **Apple menu () → System Settings → Privacy & Security**.
-3. Scroll down to the **Security** section.
-4. If macOS displays a message stating *“KeepSake was blocked from use because it is not from an identified developer”*, click **Open Anyway**.
-5. Authenticate with your Mac password or Touch ID when prompted, and confirm the action.
+**Important:** Select the `w600k_mbf.onnx` file, not the ZIP archive or another model file.
 
-> [!NOTE]
-> The **Open Anyway** button is typically available for about an hour after attempting to open the app. This option may not appear in every situation. If macOS reports that the application is damaged, explicitly warns of detected malware, or does not offer the expected override, **stop** and do not attempt to bypass security checks.
+### Step 2: Open model settings
 
-#### Method 2 — Open using Finder
-1. Open **Finder** and navigate to your `/Applications` folder (or the directory containing `KeepSake.app`).
-2. **Control-click** (or right-click) `KeepSake.app` and select **Open** from the context menu.
-3. If macOS presents an alert asking for confirmation to open the application, review the prompt and click **Open** only if you trust the download.
+1. Launch KeepSake.
+2. Open **Settings** using `⌘ + ,` (Command + Comma).
+3. Navigate to the **Model** tab.
+4. Look for the available model setup or ONNX import controls.
 
-> [!NOTE]
-> Depending on your version of macOS (such as macOS 15 Sequoia and newer), Finder context-menu overrides may not be offered and will redirect you to the **Privacy & Security** settings panel described in Method 1.
+If the Model Setup popup appears automatically, you can use the same workflow there.
 
-### Security Best Practices
-- **Official Source Only**: Download KeepSake exclusively from the [official GitHub repository](https://github.com/vikramaditya7z/keepsake-f) or its [verified releases](https://github.com/vikramaditya7z/keepsake-f/releases). Never download builds from untrusted third-party sites.
-- **Overrides are User Decisions**: Overriding a Gatekeeper warning tells macOS to bypass automated policy; an override is not proof or verification that an app is safe.
-- **Do Not Disable Gatekeeper Globally**: Never run commands to turn off macOS Gatekeeper globally (such as `spctl --master-disable`) or indiscriminately remove quarantine attributes from unknown files.
-- **Notarization Status**: The current release has not been notarized by Apple.
+### Step 3: Convert and install the model
+
+1. Choose the ONNX model selection option, if available.
+2. Select the extracted `w600k_mbf.onnx` file.
+3. Allow KeepSake to convert the model locally.
+4. Wait for validation, Core ML compilation, and installation to finish.
+
+KeepSake uses its bundled `keepsakemodelconverter` helper for the conversion workflow. The expected model input is `1 × 3 × 112 × 112`, with a 512-dimensional embedding output.
+
+The compiled model is installed under:
+
+`~/Library/Application Support/KeepSake/Models/`
+
+Once installation completes successfully, KeepSake can use the model for face recognition.
+
+## Option B — Import an Existing Core ML Model
+
+If you already have a compatible compiled Core ML model:
+
+1. Open KeepSake Settings using `⌘ + ,`.
+2. Navigate to the **Model** tab.
+3. Choose **Import Core ML Model…**, if available.
+4. Select your compatible `.mlpackage` or `.mlmodelc` model.
+5. Follow any validation or installation prompts.
+
+The imported model must be compatible with KeepSake's expected input dimensions and 512-dimensional embedding output.
+
+## Model setup troubleshooting
+
+| Problem | What to do |
+|---|---|
+| The setup popup never appears | Open Settings with `⌘ + ,` and navigate to Model. |
+| The ONNX file isn't accepted | Make sure you extracted `buffalo_s.zip` and selected `w600k_mbf.onnx`. |
+| Conversion fails | Verify the model file is complete and compatible. Check the error message before retrying. |
+| The model isn't detected after installation | Check whether `~/Library/Application Support/KeepSake/Models/active_model.mlmodelc` exists. |
+| No model setup controls appear in Settings | Check the installed app's version and consult the [GitHub Issues page](https://github.com/vikramaditya7z/keepsake-f/issues). |
+
+**Licensing:** InsightFace pretrained weights are third-party research artifacts. You must obtain them independently and comply with the applicable license. KeepSake does not distribute the pretrained `w600k_mbf.onnx` weights.
 
 ---
 
-## First-Time Setup Guide
+# 📦 Download and Install
 
-Follow these six simple steps to get started with KeepSake:
+Download KeepSake for macOS from the official sources:
 
-### Step 1: Install KeepSake
+- **[Download the latest KeepSake DMG](https://github.com/vikramaditya7z/keepsake-f/releases/latest)**
+- [View all GitHub releases](https://github.com/vikramaditya7z/keepsake-f/releases)
+- [Browse the source code](https://github.com/vikramaditya7z/keepsake-f)
+
+### Installation
+
 1. Download `KeepSake.dmg`.
-2. Double-click the DMG to open it.
-3. Drag **KeepSake.app** into your **Applications** folder shortcut.
-4. Eject the disk image.
-
-### Step 2: Launch the App
-Open **KeepSake.app** from `/Applications`. If macOS displays a security warning, follow the steps in the [macOS Security Warning](#macos-security-warning-keepsake-not-opened) section above.
-
-### Step 3: Choose Your Photo Library
-When the app opens, click **Choose Folder** (or click the **+** button in the sidebar) and select any directory containing your photos (e.g. `~/Pictures` or an external drive). KeepSake accesses folders strictly with security-scoped bookmarks without modifying, moving, or re-encoding your original photos.
-
-### Step 4: Set Up the Face Recognition Model
-To recognize and cluster people across photos, KeepSake uses a MobileFaceNet ArcFace neural network. Because model weights are third-party research artifacts subject to an academic non-commercial license, users must independently obtain the weights and comply with the applicable model license.
-
-On first launch, KeepSake displays the **Model Setup** sheet:
-
-#### Option A: Automatic Local ONNX Conversion (Recommended)
-1. Download `buffalo_s.zip` from the official [InsightFace v0.7.0 Release](https://github.com/deepinsight/insightface/releases/tag/v0.7).
-2. Unzip `buffalo_s.zip` and locate `w600k_mbf.onnx`.
-3. In KeepSake's setup window, click **Choose ONNX Model…** and select `w600k_mbf.onnx`.
-4. KeepSake converts the ONNX model locally using its bundled on-device converter, validates input/output tensors ($1 \times 3 \times 112 \times 112 \to 512\text{D}$), compiles it to Core ML, and installs it automatically into your Application Support directory.
-
-#### Option B: Manual Core ML Import
-If you already have a compiled `.mlpackage` or `.mlmodelc`, click **Import Core ML Model…** or configure it anytime under **Settings** (`Cmd + ,`) → **Model** tab.
-
-### Step 5: Automatic Scanning & Indexing
-Once the model is installed, KeepSake automatically:
-1. Discovers image files (`.jpg`, `.jpeg`, `.heic`, `.png`, `.tiff`).
-2. Detects facial bounding boxes using Apple Vision.
-3. Generates 512-dimensional face embeddings via Core ML.
-4. Performs constrained average-linkage clustering.
-
-### Step 6: Review & Organize People
-- **People Gallery**: Browse identified individuals with representative face avatars.
-- **Naming**: Click on any person to assign names or merge identities.
-- **Suggestion Queue**: Review candidate face matches with high confidence and accept or reject them with a single click.
-
-### Troubleshooting & FAQs
-
-* **Model conversion reports invalid dimensions or fails:** Ensure you selected `w600k_mbf.onnx` extracted from `buffalo_s.zip` (input tensor shape: $1 \times 3 \times 112 \times 112 \to 512\text{D}$). KeepSake validates tensor shapes prior to Core ML compilation.
-* **macOS Gatekeeper blocks opening:** Follow the [macOS Security Warning](#macos-security-warning-keepsake-not-opened) instructions. In **System Settings → Privacy & Security**, click **Open Anyway**.
-* **Photos folder permission issues:** When prompted by macOS, grant KeepSake access to your selected photos directory. You can verify permissions under **System Settings → Privacy & Security → Files and Folders**.
-* **Model setup re-prompted on launch:** If model setup appears again, verify that `~/Library/Application Support/KeepSake/Models/active_model.mlmodelc` exists and has not been moved or deleted.
+2. Double-click the downloaded file.
+3. Drag `KeepSake.app` into the Applications folder shortcut.
+4. Eject the mounted disk image.
+5. Open KeepSake from your Applications folder.
+6. Complete the model setup described above.
+7. Select a folder containing your photos to begin indexing.
 
 ---
 
-## Key Features
+# 🔐 macOS Security Warning
 
-- **🔒 100% On-Device & Private**: Zero network connections, zero telemetry, zero analytics. Your personal photos, embeddings, and metadata never leave your Mac.
-- **⚡ Native Apple Silicon & Intel Universal**: Built in Swift and SwiftUI, leveraging Apple Neural Engine (ANE), Metal GPU, and Accelerate framework.
-- **🚀 Memory-Optimized Pipeline**: Efficient RAM profile with bounded worker concurrency, cooperative cancellation, integer-indexed graph clustering, and scoped autorelease pools capable of indexing thousands of photos while keeping memory well under control.
-- **🧠 512-Dimensional Deep Embeddings**: Accurate face representation using MobileFaceNet ArcFace embeddings.
-- **🚫 Cannot-Link Constraint Enforcement**: Two faces detected within the same photo are mathematically prohibited from merging into the same person cluster, preventing false positive conflations.
-- **🖼️ Sharp, Orientation-Correct Thumbnails**: High-performance two-tier disk cache preserving EXIF orientation tags and rendering crisp Retina thumbnails.
-- **🔄 Live Folder Monitoring**: Uses FSEvents to track added, modified, or deleted photos in real time.
-- **💾 Safe, Isolated Storage**: Atomic JSON snapshots ensure library indices survive app crashes or power loss without database corruption.
+KeepSake is currently distributed without Apple Developer ID signing and notarization. macOS may therefore display a warning when you first open the downloaded app.
+
+This warning does not establish whether an application is safe or unsafe. Apple has not notarized this release.
+
+Read Apple's guidance: [Safely open apps on your Mac](https://support.apple.com/en-in/102445).
+
+### If macOS blocks KeepSake
+
+If you downloaded the application from the official repository and have verified that it is the expected release, you can try the following:
+
+**Method 1 — Privacy & Security**
+
+1. When the warning appears, click **Done** or **Cancel**.
+2. Open **Apple menu → System Settings → Privacy & Security**.
+3. Scroll to the Security section.
+4. If KeepSake appears as a blocked application, select **Open Anyway**.
+5. Authenticate and confirm only if you trust the application.
+
+**Method 2 — Finder**
+
+1. Open Finder and navigate to Applications.
+2. Control-click `KeepSake.app`.
+3. Select **Open**.
+4. Review any confirmation before proceeding.
+
+The available options depend on your macOS version and the specific warning.
+
+**Important:** If macOS reports that the application is damaged or explicitly identifies a malware threat, stop and investigate. Do not disable Gatekeeper globally or indiscriminately remove security attributes from downloaded files.
 
 ---
 
-## Architecture
+# ✨ Key Features
 
-KeepSake is built with a modular, service-oriented Swift architecture adhering to clean separation of concerns and Swift concurrency (`async`/`await` and `actor` isolation).
+- **Local-first processing:** Face detection, embedding generation, clustering, and indexing run locally on your Mac.
+- **Native macOS experience:** Built using Swift and SwiftUI.
+- **Neural face recognition:** Generates 512-dimensional face embeddings using a compatible Core ML recognition model.
+- **People gallery:** Browse candidate identity groups and inspect representative faces.
+- **Identity suggestions:** Review potential matches and correct groupings.
+- **Constrained clustering:** Prevents two distinct faces detected in the same photo from being assigned to the same person cluster.
+- **Persistent indexing:** Stores photo metadata, embeddings, and grouping information locally.
+- **Memory-conscious processing:** Uses bounded caching, coordinated cancellation, batching, and reduced temporary allocations.
+- **Sharp thumbnails:** Image orientation and thumbnail resolution are handled for reliable photo browsing.
+- **Local model conversion:** Converts a compatible ONNX model into a format usable by Core ML through the bundled helper.
+
+---
+
+# 🖼️ How KeepSake Works
+
+KeepSake processes a selected photo library through several stages.
+
+1. **Photo discovery:** Finds supported image files in the selected directory.
+2. **Face detection:** Uses Apple Vision to identify face locations.
+3. **Preprocessing:** Prepares detected face regions for neural inference.
+4. **Embedding generation:** Uses Core ML to produce a 512-dimensional numerical representation of each face.
+5. **Similarity comparison:** Compares face embeddings using cosine similarity.
+6. **Constrained clustering:** Groups likely matches using hierarchical clustering and cannot-link constraints.
+7. **Persistence:** Saves indexing results in a local library index.
+8. **Review and organization:** Lets users browse people and review candidate matches.
+
+Clustering identifies likely matches; it does not guarantee that every grouping is correct. Users remain responsible for reviewing uncertain identities.
+
+---
+
+# 🏗️ Architecture
+
+KeepSake uses a modular, service-oriented Swift architecture.
 
 ```mermaid
 flowchart TD
-    subgraph UI ["SwiftUI Interface"]
-        ContentView["ContentView (NavigationSplitView)"]
-        PeopleView["People & Suggestions Views"]
-        PhotoGrid["Photo Grid & Detail Inspector"]
-        ModelSheet["Model Setup & Settings Sheets"]
-    end
+    A[Selected Photo Library] --> B[Photo Discovery]
+    B --> C[ImageIO and Core Graphics]
+    C --> D[Apple Vision Face Detection]
+    D --> E[Face Preprocessing]
+    E --> F[Core ML Face Recognition]
+    F --> G[512-D Face Embeddings]
+    G --> H[Constrained Hierarchical Clustering]
+    H --> I[Local Library Index]
+    I --> J[People Gallery and Suggestions]
 
-    subgraph Core ["Coordination & State Layer"]
-        Coordinator["LibraryProcessingCoordinator (@MainActor)"]
-        Queue["LibraryProcessingQueue (Actor-Isolated FIFO)"]
-        Store["LibraryStore (Atomic JSON Snapshot Persistence)"]
-        Settings["AppSettings (@AppStorage)"]
-    end
-
-    subgraph Pipeline ["Processing & Inference Pipeline"]
-        FolderMon["FolderMonitorService (FSEvents)"]
-        Vision["FaceDetectionService (Apple Vision)"]
-        CoreML["ArcFaceRecognitionService (Core ML 512D)"]
-        Clustering["FaceClusteringService (Average-Linkage + Cannot-Link)"]
-        Identity["IdentityService (Reconciliation & Merging)"]
-        Cache["DiskThumbnailCache (Two-Tier JPEG Cache)"]
-    end
-
-    subgraph Conversion ["On-Device Model Converter"]
-        ConverterService["ONNXConversionService"]
-        BundledBinary["keepsakemodelconverter (PyInstaller Helper)"]
-        ModelMgr["ModelManager (Validation & Compilation)"]
-    end
-
-    UI --> Core
-    Coordinator --> Queue
-    Coordinator --> Store
-    Queue --> Vision
-    Queue --> CoreML
-    CoreML --> Clustering
-    Clustering --> Identity
-    Coordinator --> Cache
-    FolderMon --> Coordinator
-
-    ModelSheet --> ConverterService
-    ConverterService --> BundledBinary
-    BundledBinary --> ModelMgr
-    ModelMgr --> CoreML
+    K[User-Obtained ONNX Model] --> L[Bundled Local Converter]
+    L --> M[Core ML Model Validation and Installation]
+    M --> F
 ```
 
----
+### Main technologies
 
-## Privacy & Local Data Storage
-
-KeepSake is strictly local-first. All application state is stored inside standard macOS application support directories:
-
-| Component | Path | Description |
-| :--- | :--- | :--- |
-| **Library Index** | `~/Library/Application Support/KeepSake/library_index.json` | Atomic JSON snapshot of photos, detected faces, embeddings, and identity clusters. |
-| **Installed Model** | `~/Library/Application Support/KeepSake/Models/` | Compiled Core ML face recognition package (`buffalo_s.mlpackage` / `.mlmodelc`). |
-| **Thumbnail Cache** | `~/Library/Caches/com.keepsake.KeepSake/Thumbnails/` | JPEG cached thumbnails at $160\text{px}$ and $400\text{px}$ for instantaneous scrolling. |
-| **Preferences** | `~/Library/Preferences/com.keepsake.KeepSake.plist` | User display and scan options managed via standard `UserDefaults`. |
-
-Your original photos are **never** copied, modified, tagged, or relocated.
-
----
-
-## System Requirements
-
-- **Operating System**: macOS 14.0 (Sonoma) or later.
-- **Hardware**:
-  - Apple Silicon Mac (M1/M2/M3/M4) recommended for Apple Neural Engine acceleration.
-  - Intel Mac running macOS 14.0+ supported via CPU and Metal GPU inference.
-- **Build Tools** (for developers): Xcode 15.0 or later with macOS 14 SDK.
+| Component | Technology |
+|---|---|
+| Language | Swift |
+| Interface | SwiftUI |
+| Face detection | Apple Vision |
+| Image processing | ImageIO and Core Graphics |
+| Face recognition | Core ML, MobileFaceNet/ArcFace-style model |
+| Model conversion | ONNX, onnx2coreml, coremltools |
+| Similarity | Cosine similarity |
+| Clustering | Constrained hierarchical average-linkage clustering |
+| Persistence | Local JSON index with atomic snapshots |
+| Caching | Memory-bounded and disk-backed caches |
+| Concurrency | Swift async/await and coordinated processing |
 
 ---
 
-## Developer & Build Instructions
+# 🔒 Privacy and Local Data Storage
 
-### 1. Clone Repository
+KeepSake is designed to process personal photos locally rather than upload them to a cloud-based face-recognition service.
+
+The application stores its library index, installed model, preferences, and cached thumbnails in standard macOS application directories.
+
+| Component | Location |
+|---|---|
+| Library index | `~/Library/Application Support/KeepSake/library_index.json` |
+| Installed model | `~/Library/Application Support/KeepSake/Models/` |
+| Thumbnail cache | `~/Library/Caches/com.keepsake.KeepSake/Thumbnails/` |
+| Preferences | `~/Library/Preferences/com.keepsake.KeepSake.plist` |
+
+The original photos remain in their selected locations. KeepSake's indexing workflow does not require moving or re-encoding the originals.
+
+Face embeddings and identity-group information are sensitive derived data. Protect access to your Mac and its local application data accordingly.
+
+---
+
+# 💻 System Requirements
+
+- **Operating system:** macOS 14.0 (Sonoma) or later, as specified by the current project configuration.
+- **Architecture:** Universal application targeting Apple Silicon (`arm64`) and Intel (`x86_64`).
+- **Recommended hardware:** Apple Silicon for access to Apple Neural Engine acceleration where supported.
+- **Model requirement:** A compatible Core ML recognition model, installed through the model setup workflow.
+
+---
+
+# 🛠️ Developer Setup
+
+## 1. Clone the repository
 
 ```bash
 git clone https://github.com/vikramaditya7z/keepsake-f.git
 cd keepsake-f
 ```
 
-### 2. Build Release Application
+## 2. Build the Release application
 
 ```bash
 xcodebuild \
@@ -226,35 +249,65 @@ xcodebuild \
   build
 ```
 
-The resulting `KeepSake.app` will be in:
+The resulting application should be located at:
+
 `build/DerivedData/Build/Products/Release/KeepSake.app`
 
-### 3. Run Test Suite
+**Packaging note:** The model converter may require the project's embedding script to be run against the Release app after building. Follow the current release packaging procedure and verify the final bundle before distributing it.
 
-Run the full suite of automated unit and integration tests:
+## 3. Run the test suite
+
+Use the project's configured test scheme:
 
 ```bash
 xcodebuild \
   -project KeepSake.xcodeproj \
-  -scheme KeepSakeTests \
+  -scheme KeepSake \
+  -destination 'platform=macOS' \
   -derivedDataPath ./build/DerivedData \
   test
 ```
 
-### 4. Create Distributable DMG
+Tests should use isolated temporary storage rather than modifying a production photo library.
 
-Package the built Release app into a distributable disk image:
+## 4. Create the DMG
+
+Use the repository's existing packaging script:
 
 ```bash
 bash build/scripts/create_dmg.sh
 ```
 
-This creates `dist/KeepSake.dmg` containing `KeepSake.app` and a convenient drag-and-drop `/Applications` folder shortcut.
+The expected output is:
+
+`dist/KeepSake.dmg`
+
+Verify that the resulting disk image contains the complete Release app and required converter resources before distributing it.
 
 ---
 
-## Licensing & Acknowledgments
+# 📜 Licensing and Acknowledgments
 
-- **KeepSake Application Code**: Released under the [MIT License](LICENSE).
-- **Third-Party Open-Source Components**: KeepSake bundles runtime dependencies including `onnx2coreml`, `coremltools`, `onnx`, `numpy`, `attrs`, and Python. Full notices and license texts are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-- **Face Recognition Model Architecture**: Based on the MobileFaceNet / ArcFace algorithms developed by the [InsightFace Project](https://github.com/deepinsight/insightface). Checkpoint model weights (`buffalo_s` / `w600k_mbf.onnx`) are separate third-party research artifacts subject to the original creators' non-commercial academic license and are not hosted or distributed within this repository.
+- **KeepSake application code:** MIT License. See [LICENSE](LICENSE).
+- **Third-party conversion dependencies:** See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for dependency licenses and notices.
+- **InsightFace:** The upstream project provides the recognition model artifacts. Users must independently obtain compatible pretrained weights and comply with the applicable license.
+- **Model weights:** KeepSake does not bundle or distribute the pretrained `buffalo_s` or `w600k_mbf.onnx` weights.
+
+Official upstream project: [InsightFace](https://github.com/deepinsight/insightface).
+
+---
+
+# 🐛 Troubleshooting and Support
+
+If you encounter a problem:
+
+1. Check the relevant setup or troubleshooting section above.
+2. Verify that you're using the official KeepSake download.
+3. Confirm that your model is compatible and installed correctly.
+4. Review existing reports or open an issue on [GitHub Issues](https://github.com/vikramaditya7z/keepsake-f/issues).
+
+When reporting a bug, include your macOS version, Mac architecture, the relevant error message, and the steps needed to reproduce the issue. Do not attach private photos or your personal library database.
+
+---
+
+**KeepSake — your photo library, organized locally.** 📸
